@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Profile from './pages/Profile';
 import AdminPanel from './pages/AdminPanel';
+import ProductDetail from './pages/ProductDetail';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
               <Route path="/giris" element={<Login />} />
               <Route path="/kayit" element={<Register />} />
               <Route path="/profil" element={<Profile />} />
+              <Route path="/urun/:id" element={<ProductDetail />} />
               <Route 
                 path="/admin" 
                 element={
