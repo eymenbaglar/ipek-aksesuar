@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const AuthContext = createContext();
 
@@ -14,26 +14,40 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    // LocalStorage'dan user bilgisini al
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (error) {
+        console.error('User parse error:', error);
+      }
+    }
+  }, []);
+
   const login = async (email, password) => {
     try {
       setLoading(true);
-      // Backend bağlantısı için
       const response = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
       
-      if (response.ok) {
-        const data = await response.json();
+      const data = await response.json();
+      console.log('Login response:', data); // Debug
+      
+      if (response.ok && data.token) {
         setUser(data.user);
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         return { success: true };
       } else {
-        return { success: false, error: 'Giriş başarısız' };
+        return { success: false, error: data.error || 'Giriş başarısız' };
       }
     } catch (error) {
+      console.error('Login error:', error);
       return { success: false, error: 'Bağlantı hatası' };
     } finally {
       setLoading(false);
@@ -42,19 +56,38 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
+      setLoading(true);
+      console.log('Register isteği gönderiliyor:', userData); // Debug
+      
       const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(userData)
       });
       
-      if (response.ok) {
-        return { success: true };
+      const data = await response.json();
+      console.log('Register response:', data); // Debug
+      
+      // success field'ını kontrol et
+      if (response.ok || data.success) {
+        return { 
+          success: true, 
+          message: data.message || 'Kayıt başarılı!' 
+        };
       } else {
-        return { success: false };
+        return { 
+          success: false, 
+          error: data.error || 'Kayıt başarısız' 
+        };
       }
     } catch (error) {
-      return { success: false, error: 'Kayıt başarısız' };
+      console.error('Register error:', error);
+      return { 
+        success: false, 
+        error: 'Bağlantı hatası: ' + error.message 
+      };
+    } finally {
+      setLoading(false);
     }
   };
 
