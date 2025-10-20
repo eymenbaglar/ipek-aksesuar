@@ -13,6 +13,7 @@ import Register from './pages/Register';
 import Profile from './pages/Profile';
 import AdminPanel from './pages/AdminPanel';
 import ProductDetail from './pages/ProductDetail';
+import SearchResults from './pages/SearchResults';
 
 function App() {
   return (
@@ -44,6 +45,7 @@ function App() {
                     </ProtectedRoute>
                   } 
                 />
+                <Route path="/arama" element={<SearchResults />} />
               </Routes>
             </main>
             
