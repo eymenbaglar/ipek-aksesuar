@@ -793,9 +793,23 @@ app.get('/api/orders/:orderId', authenticateToken, async (req, res) => {
       [orderId]
     );
 
+    // Get order status history
+    const historyResult = await pool.query(
+      `SELECT * FROM order_status_history WHERE order_id = $1 ORDER BY created_at ASC`,
+      [orderId]
+    );
+
+    // Get user info
+    const userResult = await pool.query(
+      `SELECT name, surname, email, phone FROM users WHERE id = $1`,
+      [order.user_id]
+    );
+
     res.json({
       ...order,
-      items: itemsResult.rows
+      items: itemsResult.rows,
+      statusHistory: historyResult.rows,
+      user: userResult.rows[0]
     });
   } catch (error) {
     console.error('Get order error:', error);
@@ -1015,6 +1029,311 @@ app.get('/api/admin/email-logs', authenticateToken, requireAdmin, async (req, re
   } catch (error) {
     console.error('Get email logs error:', error);
     res.status(500).json({ error: 'Email logları alınamadı' });
+  }
+});
+
+// Cancel/Refund Routes
+// 1. Cancel order (User - only for pending, payment_received, preparing)
+app.post('/api/orders/:orderId/cancel', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { orderId } = req.params;
+    const { reason } = req.body;
+
+    await client.query('BEGIN');
+
+    // Get order
+    const orderResult = await client.query(
+      'SELECT * FROM orders WHERE id = $1',
+      [orderId]
+    );
+
+    if (orderResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Sipariş bulunamadı' });
+    }
+
+    const order = orderResult.rows[0];
+
+    // Check authorization
+    if (req.user.id !== order.user_id && req.user.role !== 'admin') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Yetkisiz erişim' });
+    }
+
+    // Check if cancellable
+    const cancellableStatuses = ['pending', 'payment_received', 'preparing'];
+    if (!cancellableStatuses.includes(order.status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'Bu sipariş iptal edilemez. Sadece beklemede, ödeme alındı veya hazırlanıyor durumundaki siparişler iptal edilebilir.'
+      });
+    }
+
+    // Get order items to restore stock
+    const itemsResult = await client.query(
+      'SELECT product_id, quantity FROM order_items WHERE order_id = $1',
+      [orderId]
+    );
+
+    // Restore stock
+    for (const item of itemsResult.rows) {
+      await client.query(
+        'UPDATE products SET stock = stock + $1 WHERE id = $2',
+        [item.quantity, item.product_id]
+      );
+    }
+
+    // Update order status to cancelled
+    await client.query(
+      'UPDATE orders SET status = $1 WHERE id = $2',
+      ['cancelled', orderId]
+    );
+
+    // If payment was received, create refund request automatically
+    if (order.payment_status === 'success') {
+      await client.query(
+        `INSERT INTO refund_requests (order_id, user_id, reason, description, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [orderId, order.user_id, reason || 'Sipariş iptali', 'Kullanıcı siparişi iptal etti', 'pending']
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Sipariş başarıyla iptal edildi',
+      refundPending: order.payment_status === 'success'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Cancel order error:', error);
+    res.status(500).json({ error: 'Sipariş iptal edilemedi' });
+  } finally {
+    client.release();
+  }
+});
+
+// 2. Create refund request (User - only for delivered orders within 14 days)
+app.post('/api/orders/:orderId/refund', authenticateToken, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { reason, description, photos } = req.body;
+    const userId = req.user.id;
+
+    // Get order
+    const orderResult = await pool.query(
+      'SELECT * FROM orders WHERE id = $1',
+      [orderId]
+    );
+
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Sipariş bulunamadı' });
+    }
+
+    const order = orderResult.rows[0];
+
+    // Check authorization
+    if (userId !== order.user_id) {
+      return res.status(403).json({ error: 'Yetkisiz erişim' });
+    }
+
+    // Check if delivered
+    if (order.status !== 'delivered') {
+      return res.status(400).json({
+        error: 'Sadece teslim edilmiş siparişler için iade talebi oluşturabilirsiniz'
+      });
+    }
+
+    // Check 14 days limit
+    const deliveredDate = new Date(order.delivered_at);
+    const today = new Date();
+    const daysDifference = Math.floor((today - deliveredDate) / (1000 * 60 * 60 * 24));
+
+    if (daysDifference > 14) {
+      return res.status(400).json({
+        error: 'İade süresi dolmuş. Sadece teslim tarihinden itibaren 14 gün içinde iade talebi oluşturabilirsiniz.'
+      });
+    }
+
+    // Check if refund request already exists
+    const existingRefund = await pool.query(
+      'SELECT * FROM refund_requests WHERE order_id = $1',
+      [orderId]
+    );
+
+    if (existingRefund.rows.length > 0) {
+      return res.status(400).json({
+        error: 'Bu sipariş için zaten bir iade talebi mevcut'
+      });
+    }
+
+    // Create refund request
+    const result = await pool.query(
+      `INSERT INTO refund_requests (order_id, user_id, reason, description, photos, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       RETURNING *`,
+      [orderId, userId, reason, description || null, photos || null, 'pending']
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'İade talebi başarıyla oluşturuldu',
+      refundRequest: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Create refund request error:', error);
+    res.status(500).json({ error: 'İade talebi oluşturulamadı' });
+  }
+});
+
+// 3. Get user's refund requests
+app.get('/api/users/:userId/refund-requests', authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (req.user.id !== parseInt(userId) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Yetkisiz erişim' });
+    }
+
+    const result = await pool.query(
+      `SELECT
+        rr.*,
+        o.order_number,
+        o.total_price
+       FROM refund_requests rr
+       LEFT JOIN orders o ON rr.order_id = o.id
+       WHERE rr.user_id = $1
+       ORDER BY rr.created_at DESC`,
+      [userId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get refund requests error:', error);
+    res.status(500).json({ error: 'İade talepleri alınamadı' });
+  }
+});
+
+// 4. Get all refund requests (Admin)
+app.get('/api/admin/refund-requests', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { status } = req.query;
+
+    let query = `
+      SELECT
+        rr.*,
+        o.order_number,
+        o.total_price,
+        u.name as user_name,
+        u.surname as user_surname,
+        u.email as user_email
+      FROM refund_requests rr
+      LEFT JOIN orders o ON rr.order_id = o.id
+      LEFT JOIN users u ON rr.user_id = u.id
+    `;
+
+    const queryParams = [];
+    if (status) {
+      query += ' WHERE rr.status = $1';
+      queryParams.push(status);
+    }
+
+    query += ' ORDER BY rr.created_at DESC';
+
+    const result = await pool.query(query, queryParams);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get all refund requests error:', error);
+    res.status(500).json({ error: 'İade talepleri alınamadı' });
+  }
+});
+
+// 5. Update refund request status (Admin)
+app.put('/api/admin/refund-requests/:requestId', authenticateToken, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { requestId } = req.params;
+    const { status, adminNotes, returnTrackingNumber, returnCargoCompany } = req.body;
+
+    await client.query('BEGIN');
+
+    // Get refund request
+    const refundResult = await client.query(
+      'SELECT * FROM refund_requests WHERE id = $1',
+      [requestId]
+    );
+
+    if (refundResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'İade talebi bulunamadı' });
+    }
+
+    const refundRequest = refundResult.rows[0];
+
+    // Update refund request
+    let updateQuery = 'UPDATE refund_requests SET status = $1, admin_notes = $2';
+    const updateParams = [status, adminNotes || null];
+    let paramCounter = 3;
+
+    if (returnTrackingNumber) {
+      updateQuery += `, return_tracking_number = $${paramCounter}`;
+      updateParams.push(returnTrackingNumber);
+      paramCounter++;
+    }
+
+    if (returnCargoCompany) {
+      updateQuery += `, return_cargo_company = $${paramCounter}`;
+      updateParams.push(returnCargoCompany);
+      paramCounter++;
+    }
+
+    updateQuery += ` WHERE id = $${paramCounter} RETURNING *`;
+    updateParams.push(requestId);
+
+    const result = await client.query(updateQuery, updateParams);
+
+    // If approved and stock should be restored
+    if (status === 'approved') {
+      // Get order items
+      const itemsResult = await client.query(
+        'SELECT product_id, quantity FROM order_items WHERE order_id = $1',
+        [refundRequest.order_id]
+      );
+
+      // Restore stock
+      for (const item of itemsResult.rows) {
+        await client.query(
+          'UPDATE products SET stock = stock + $1 WHERE id = $2',
+          [item.quantity, item.product_id]
+        );
+      }
+
+      // Update order status to refunded
+      await client.query(
+        'UPDATE orders SET status = $1 WHERE id = $2',
+        ['refunded', refundRequest.order_id]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'İade talebi güncellendi',
+      refundRequest: result.rows[0]
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Update refund request error:', error);
+    res.status(500).json({ error: 'İade talebi güncellenemedi' });
+  } finally {
+    client.release();
   }
 });
 

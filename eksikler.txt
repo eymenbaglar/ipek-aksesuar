@@ -1,7 +1,7 @@
 profil sayfasındaki durum (sayfa yenileyince log ine atıyor değişik durumlar oluyor)
 iyzico entegrasyonu
 iade/iptal işlemi   XXXXX (burdan devam)
-sipariş detay (admin panel ve profil)
 fatura (sipariş mailiyle birlikte fatura yollama)
 sipariş verirken adrese tıklaman lazımki sipariş verebilesin
-sipariş mailinde adres tam yazılmamış
+profildeki adres düzenle çalışmıyor
+sipariş mailinde ve admin panel sipariş detayında adres tam yazılmamış

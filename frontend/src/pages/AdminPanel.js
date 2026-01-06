@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { getShippingSettings, saveShippingSettings } from '../config/siteSettings';
+import OrderDetailsModal from '../components/OrderDetailsModal';
 
 function AdminPanel() {
   const { user } = useAuth();
@@ -12,6 +13,8 @@ function AdminPanel() {
   const [orders, setOrders] = useState([]);
   const [coupons, setCoupons] = useState([]);
   const [emailLogs, setEmailLogs] = useState([]);
+  const [refundRequests, setRefundRequests] = useState([]);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [shippingSettings, setShippingSettings] = useState(getShippingSettings());
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -44,6 +47,7 @@ function AdminPanel() {
     fetchOrders();
     fetchCoupons();
     fetchEmailLogs();
+    fetchRefundRequests();
   }, [user, navigate]);
 
   const fetchProducts = async () => {
@@ -179,6 +183,48 @@ function AdminPanel() {
     } catch (error) {
       console.error('Email logları yüklenemedi:', error);
       setEmailLogs([]);
+    }
+  };
+
+  const fetchRefundRequests = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/api/admin/refund-requests', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setRefundRequests(data);
+      }
+    } catch (error) {
+      console.error('İade talepleri yüklenemedi:', error);
+      setRefundRequests([]);
+    }
+  };
+
+  const handleUpdateRefundRequest = async (requestId, status, adminNotes) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:5000/api/admin/refund-requests/${requestId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status, adminNotes })
+      });
+
+      if (response.ok) {
+        alert('İade talebi güncellendi');
+        fetchRefundRequests();
+        fetchOrders(); // Sipariş durumunu güncelle
+      } else {
+        const error = await response.json();
+        alert(`Hata: ${error.error || 'Güncelleme başarısız'}`);
+      }
+    } catch (error) {
+      console.error('İade talebi güncellenemedi:', error);
+      alert('Bir hata oluştu');
     }
   };
 
@@ -401,6 +447,9 @@ function AdminPanel() {
         </div>
         <div style={tabStyle(activeTab === 'emailLogs')} onClick={() => setActiveTab('emailLogs')}>
           📧 Email Logları
+        </div>
+        <div style={tabStyle(activeTab === 'refundRequests')} onClick={() => setActiveTab('refundRequests')}>
+          ↩️ İade Talepleri
         </div>
       </div>
 
@@ -1153,6 +1202,7 @@ function AdminPanel() {
                         <th style={{ padding: '12px', textAlign: 'center' }}>Ürün Sayısı</th>
                         <th style={{ padding: '12px', textAlign: 'center' }}>Durum</th>
                         <th style={{ padding: '12px', textAlign: 'center' }}>Kargo</th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>Detay</th>
                         <th style={{ padding: '12px', textAlign: 'center' }}>İşlemler</th>
                       </tr>
                     </thead>
@@ -1205,6 +1255,23 @@ function AdminPanel() {
                             ) : (
                               <span style={{ color: '#6c757d', fontSize: '12px' }}>-</span>
                             )}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <button
+                              onClick={() => setSelectedOrderId(order.id)}
+                              style={{
+                                padding: '6px 12px',
+                                backgroundColor: '#667eea',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: '500'
+                              }}
+                            >
+                              📋 Detay
+                            </button>
                           </td>
                           <td style={{ padding: '12px', textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -1397,7 +1464,167 @@ function AdminPanel() {
             </div>
           </div>
         )}
+
+        {/* Refund Requests Tab */}
+        {activeTab === 'refundRequests' && (
+          <div>
+            <h1>İade Talepleri</h1>
+            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '10px' }}>
+              {refundRequests.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#6c757d' }}>Henüz iade talebi bulunmuyor.</p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #ddd' }}>
+                        <th style={{ padding: '12px', textAlign: 'left' }}>Tarih</th>
+                        <th style={{ padding: '12px', textAlign: 'left' }}>Sipariş No</th>
+                        <th style={{ padding: '12px', textAlign: 'left' }}>Müşteri</th>
+                        <th style={{ padding: '12px', textAlign: 'left' }}>Neden</th>
+                        <th style={{ padding: '12px', textAlign: 'right' }}>Tutar</th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>Durum</th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>İşlemler</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {refundRequests.map((request) => (
+                        <tr key={request.id} style={{ borderBottom: '1px solid #eee' }}>
+                          <td style={{ padding: '12px' }}>
+                            {new Date(request.created_at).toLocaleDateString('tr-TR')}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <strong>{request.order_number}</strong>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div>
+                              <strong>{request.user_name} {request.user_surname}</strong>
+                              <br />
+                              <small style={{ color: '#6c757d' }}>{request.user_email}</small>
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div>
+                              <strong style={{ color: '#2c3e50' }}>{request.reason}</strong>
+                              {request.description && (
+                                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#6c757d' }}>
+                                  {request.description}
+                                </p>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>
+                            ₺{Number(request.total_price).toFixed(2)}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <span style={{
+                              padding: '4px 12px',
+                              borderRadius: '20px',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              backgroundColor:
+                                request.status === 'pending' ? '#fff3cd' :
+                                request.status === 'approved' ? '#d4edda' :
+                                request.status === 'rejected' ? '#f8d7da' :
+                                request.status === 'refunded' ? '#d1ecf1' : '#e9ecef',
+                              color:
+                                request.status === 'pending' ? '#856404' :
+                                request.status === 'approved' ? '#155724' :
+                                request.status === 'rejected' ? '#721c24' :
+                                request.status === 'refunded' ? '#0c5460' : '#495057'
+                            }}>
+                              {request.status === 'pending' ? '⏳ Beklemede' :
+                               request.status === 'approved' ? '✅ Onaylandı' :
+                               request.status === 'rejected' ? '❌ Reddedildi' :
+                               request.status === 'refunded' ? '💰 İade Edildi' : request.status}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            {request.status === 'pending' && (
+                              <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
+                                <button
+                                  onClick={() => {
+                                    const notes = prompt('Admin notu (opsiyonel):');
+                                    if (window.confirm('İade talebini onaylamak istediğinizden emin misiniz? Stok geri yüklenecek.')) {
+                                      handleUpdateRefundRequest(request.id, 'approved', notes);
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '6px 12px',
+                                    backgroundColor: '#28a745',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                  }}
+                                >
+                                  ✓ Onayla
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const notes = prompt('Red nedeni:');
+                                    if (notes && window.confirm('İade talebini reddetmek istediğinizden emin misiniz?')) {
+                                      handleUpdateRefundRequest(request.id, 'rejected', notes);
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '6px 12px',
+                                    backgroundColor: '#dc3545',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                  }}
+                                >
+                                  ✗ Reddet
+                                </button>
+                              </div>
+                            )}
+                            {request.status === 'approved' && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm('İade işlemini tamamlamak istediğinizden emin misiniz?')) {
+                                    handleUpdateRefundRequest(request.id, 'refunded', 'İade tamamlandı');
+                                  }
+                                }}
+                                style={{
+                                  padding: '6px 12px',
+                                  backgroundColor: '#17a2b8',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                💰 İade Et
+                              </button>
+                            )}
+                            {(request.status === 'rejected' || request.status === 'refunded') && (
+                              <span style={{ color: '#6c757d', fontSize: '12px' }}>
+                                {request.admin_notes || '-'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Order Details Modal */}
+      {selectedOrderId && (
+        <OrderDetailsModal
+          orderId={selectedOrderId}
+          onClose={() => setSelectedOrderId(null)}
+        />
+      )}
     </div>
   );
 }

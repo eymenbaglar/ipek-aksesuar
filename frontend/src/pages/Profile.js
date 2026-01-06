@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../contexts/CartContext';
+import OrderDetailsModal from '../components/OrderDetailsModal';
 
 function Profile() {
   const { user, logout } = useAuth();
@@ -12,6 +13,7 @@ function Profile() {
   const [orders, setOrders] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [addresses, setAddresses] = useState([]);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
@@ -446,7 +448,7 @@ function Profile() {
                       </div>
                       
                       <button
-                        onClick={() => navigate(`/siparis/${order.id}`)}
+                        onClick={() => setSelectedOrderId(order.id)}
                         style={{
                           marginTop: '15px',
                           padding: '8px 20px',
@@ -514,7 +516,7 @@ function Profile() {
                       </div>
                       
                       <button
-                        onClick={() => navigate(`/siparis/${order.id}`)}
+                        onClick={() => setSelectedOrderId(order.id)}
                         style={{
                           marginTop: '15px',
                           padding: '6px 15px',
@@ -1488,6 +1490,14 @@ function Profile() {
           </div>
         </div>
       </div>
+
+      {/* Order Details Modal */}
+      {selectedOrderId && (
+        <OrderDetailsModal
+          orderId={selectedOrderId}
+          onClose={() => setSelectedOrderId(null)}
+        />
+      )}
     </div>
   );
 }
