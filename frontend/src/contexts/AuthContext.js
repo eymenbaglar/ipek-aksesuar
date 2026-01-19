@@ -13,6 +13,7 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     // LocalStorage'dan user bilgisini al
@@ -24,6 +25,7 @@ export const AuthProvider = ({ children }) => {
         console.error('User parse error:', error);
       }
     }
+    setIsInitialized(true);
   }, []);
 
   const login = async (email, password) => {
@@ -44,7 +46,11 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('user', JSON.stringify(data.user));
         return { success: true };
       } else {
-        return { success: false, error: data.error || 'Giriş başarısız' };
+        return {
+          success: false,
+          error: data.error || 'Giriş başarısız',
+          errorCode: data.errorCode
+        };
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -98,7 +104,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, isInitialized }}>
       {children}
     </AuthContext.Provider>
   );

@@ -81,38 +81,172 @@ app.post('/api/auth/register', async (req, res) => {
     // Insert user
     const result = await pool.query(
       'INSERT INTO users (email, password_hash, name, surname, role, verified, verification_token, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING id, email, name, surname, role',
-      [email, hashedPassword, name, surname, 'user', true, verificationToken] // verified'ı true yaptık test için
+      [email, hashedPassword, name, surname, 'user', false, verificationToken] // verified başlangıçta false
     );
 
-    console.log('Kullanıcı oluşturuldu:', result.rows[0]); // Debug
+    const user = result.rows[0];
+    console.log('Kullanıcı oluşturuldu:', user);
 
+    // Doğrulama emaili gönder
     try {
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
-    await transporter.sendMail({
-      from: process.env.SMTP_USER,
-      to: email,
-      subject: 'Email Doğrulama - İpek Aksesuar',
-      html: `...`
-    });
-  }
-  catch(emailError) {
-    console.log('Email gönderilemedi ama kayıt başarılı:', emailError.message);
+      const emailResult = await emailService.sendVerificationEmail(
+        { id: user.id, email, name },
+        verificationToken
+      );
 
-  }
-    
+      if (emailResult.success) {
+        console.log('✅ Doğrulama emaili başarıyla gönderildi');
+      } else {
+        console.log('⚠️ Email gönderilemedi ama kayıt başarılı:', emailResult.error);
+      }
+    } catch (emailError) {
+      console.log('⚠️ Email gönderme hatası:', emailError.message);
+    }
 
     // Başarılı response
-    res.status(201).json({ 
+    res.status(201).json({
       success: true,
-      message: 'Kayıt başarılı!',
-      user: result.rows[0] 
+      message: 'Kayıt başarılı! Lütfen email adresinizi kontrol ederek hesabınızı doğrulayın.',
+      user: user,
+      emailSent: true
     });
     
   } catch (error) {
     console.error('Register error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Kayıt sırasında hata oluştu: ' + error.message 
+      error: 'Kayıt sırasında hata oluştu: ' + error.message
+    });
+  }
+});
+
+// Email doğrulama endpoint'i
+app.get('/api/auth/verify-email', async (req, res) => {
+  try {
+    const { token } = req.query;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Doğrulama token\'ı eksik'
+      });
+    }
+
+    // Token'ı veritabanında ara
+    const result = await pool.query(
+      'SELECT * FROM users WHERE verification_token = $1',
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Geçersiz doğrulama token\'ı'
+      });
+    }
+
+    const user = result.rows[0];
+
+    // Kullanıcı zaten doğrulanmışsa
+    if (user.verified) {
+      return res.json({
+        success: true,
+        message: 'Email adresiniz zaten doğrulanmış',
+        alreadyVerified: true
+      });
+    }
+
+    // Kullanıcıyı doğrula
+    await pool.query(
+      'UPDATE users SET verified = true, verification_token = NULL WHERE id = $1',
+      [user.id]
+    );
+
+    console.log('✅ Kullanıcı email doğrulandı:', user.email);
+
+    res.json({
+      success: true,
+      message: 'Email adresiniz başarıyla doğrulandı! Artık giriş yapabilirsiniz.',
+      verified: true
+    });
+
+  } catch (error) {
+    console.error('Email verification error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Email doğrulama sırasında hata oluştu'
+    });
+  }
+});
+
+// Doğrulama emailini tekrar gönder
+app.post('/api/auth/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email adresi gerekli'
+      });
+    }
+
+    // Kullanıcıyı bul
+    const result = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Kullanıcı bulunamadı'
+      });
+    }
+
+    const user = result.rows[0];
+
+    // Zaten doğrulanmışsa
+    if (user.verified) {
+      return res.json({
+        success: true,
+        message: 'Email adresiniz zaten doğrulanmış',
+        alreadyVerified: true
+      });
+    }
+
+    // Yeni token oluştur
+    const newToken = crypto.randomBytes(32).toString('hex');
+
+    // Token'ı güncelle
+    await pool.query(
+      'UPDATE users SET verification_token = $1 WHERE id = $2',
+      [newToken, user.id]
+    );
+
+    // Doğrulama emaili gönder
+    const emailResult = await emailService.sendVerificationEmail(
+      { id: user.id, email: user.email, name: user.name },
+      newToken
+    );
+
+    if (emailResult.success) {
+      res.json({
+        success: true,
+        message: 'Doğrulama emaili tekrar gönderildi. Lütfen gelen kutunuzu kontrol edin.'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Email gönderilemedi. Lütfen daha sonra tekrar deneyin.'
+      });
+    }
+
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Email gönderme sırasında hata oluştu'
     });
   }
 });
@@ -133,12 +267,13 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Email veya şifre hatalı' });
     }
 
-    // VERİFİED KONTROLÜNÜ KAPATTIK TEST İÇİN
-    /*
+    // Email doğrulama kontrolü
     if (!user.verified) {
-      return res.status(401).json({ error: 'Lütfen email adresinizi doğrulayın' });
+      return res.status(401).json({
+        error: 'Lütfen email adresinizi doğrulayın',
+        errorCode: 'EMAIL_NOT_VERIFIED'
+      });
     }
-    */
 
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
@@ -165,52 +300,79 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
-    
+
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+      return res.status(404).json({
+        success: false,
+        error: 'Bu email adresi ile kayıtlı kullanıcı bulunamadı'
+      });
     }
 
     const user = result.rows[0];
     const resetToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 3600000); // 1 hour
 
+    // Önceki tokenları sil
+    await pool.query('DELETE FROM password_resets WHERE user_id = $1', [user.id]);
+
+    // Yeni token ekle
     await pool.query(
       'INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)',
       [user.id, resetToken, expiresAt]
     );
 
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
-    await transporter.sendMail({
-      from: process.env.SMTP_USER,
-      to: email,
-      subject: 'Şifre Sıfırlama - İpek Aksesuar',
-      html: `
-        <h2>Şifre Sıfırlama</h2>
-        <p>Şifrenizi sıfırlamak için aşağıdaki linke tıklayın:</p>
-        <a href="${resetUrl}">${resetUrl}</a>
-        <p>Bu link 1 saat geçerlidir.</p>
-      `
-    });
+    // Şifre sıfırlama emaili gönder
+    const emailResult = await emailService.sendPasswordResetEmail(user, resetToken);
 
-    res.json({ message: 'Şifre sıfırlama emaili gönderildi' });
+    if (emailResult.success) {
+      res.json({
+        success: true,
+        message: 'Şifre sıfırlama emaili gönderildi. Lütfen email kutunuzu kontrol edin.'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Email gönderilemedi. Lütfen daha sonra tekrar deneyin.'
+      });
+    }
   } catch (error) {
     console.error('Forgot password error:', error);
-    res.status(500).json({ error: 'Şifre sıfırlama hatası' });
+    res.status(500).json({
+      success: false,
+      error: 'Şifre sıfırlama sırasında bir hata oluştu'
+    });
   }
 });
 
 app.post('/api/auth/reset-password', async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token ve yeni şifre gerekli'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Şifre en az 6 karakter olmalıdır'
+      });
+    }
+
     const result = await pool.query(
       'SELECT * FROM password_resets WHERE token = $1 AND expires_at > NOW()',
       [token]
     );
 
     if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Geçersiz veya süresi dolmuş token' });
+      return res.status(400).json({
+        success: false,
+        error: 'Geçersiz veya süresi dolmuş token. Lütfen yeni şifre sıfırlama talebi oluşturun.'
+      });
     }
 
     const reset = result.rows[0];
@@ -223,10 +385,18 @@ app.post('/api/auth/reset-password', async (req, res) => {
 
     await pool.query('DELETE FROM password_resets WHERE token = $1', [token]);
 
-    res.json({ message: 'Şifre başarıyla güncellendi' });
+    console.log('✅ Şifre başarıyla güncellendi, user_id:', reset.user_id);
+
+    res.json({
+      success: true,
+      message: 'Şifre başarıyla güncellendi. Artık yeni şifrenizle giriş yapabilirsiniz.'
+    });
   } catch (error) {
     console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Şifre güncelleme hatası' });
+    res.status(500).json({
+      success: false,
+      error: 'Şifre güncelleme sırasında bir hata oluştu'
+    });
   }
 });
 
@@ -278,7 +448,55 @@ app.get('/api/users/:id', authenticateToken, async (req, res) => {
 // Product Routes
 app.get('/api/products', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
+    const { category, search, sortBy, minPrice, maxPrice } = req.query;
+
+    let query = 'SELECT * FROM products WHERE 1=1';
+    const params = [];
+    let paramIndex = 1;
+
+    // Category filter
+    if (category && category !== 'all') {
+      query += ` AND LOWER(category) = LOWER($${paramIndex})`;
+      params.push(category);
+      paramIndex++;
+    }
+
+    // Search filter
+    if (search) {
+      query += ` AND (LOWER(name) LIKE LOWER($${paramIndex}) OR LOWER(description) LIKE LOWER($${paramIndex}) OR LOWER(category) LIKE LOWER($${paramIndex}))`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    // Price range filter
+    if (minPrice) {
+      query += ` AND price >= $${paramIndex}`;
+      params.push(parseFloat(minPrice));
+      paramIndex++;
+    }
+
+    if (maxPrice) {
+      query += ` AND price <= $${paramIndex}`;
+      params.push(parseFloat(maxPrice));
+      paramIndex++;
+    }
+
+    // Sorting
+    switch (sortBy) {
+      case 'price-asc':
+        query += ' ORDER BY price ASC';
+        break;
+      case 'price-desc':
+        query += ' ORDER BY price DESC';
+        break;
+      case 'name':
+        query += ' ORDER BY name ASC';
+        break;
+      default:
+        query += ' ORDER BY created_at DESC';
+    }
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
     console.error('Get products error:', error);
@@ -302,11 +520,46 @@ app.get('/api/products/:id', async (req, res) => {
   }
 });
 
-// Cart Routes
+// Cart Routes - Database-based cart system
+
+// GET /api/cart - Get user's cart items
+app.get('/api/cart', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await pool.query(`
+      SELECT
+        c.id as cart_id,
+        c.quantity,
+        c.created_at,
+        p.id,
+        p.name,
+        p.description,
+        p.price,
+        p.stock,
+        p.images
+      FROM cart c
+      JOIN products p ON c.product_id = p.id
+      WHERE c.user_id = $1
+      ORDER BY c.created_at DESC
+    `, [userId]);
+
+    res.json({ success: true, cartItems: result.rows });
+  } catch (error) {
+    console.error('Get cart error:', error);
+    res.status(500).json({ error: 'Sepet bilgileri alınamadı' });
+  }
+});
+
+// POST /api/cart - Add item to cart or update quantity if exists
 app.post('/api/cart', authenticateToken, async (req, res) => {
   try {
     const { productId, quantity } = req.body;
     const userId = req.user.id;
+
+    if (!productId || !quantity || quantity < 1) {
+      return res.status(400).json({ error: 'Geçersiz ürün veya miktar' });
+    }
 
     // Check if product exists
     const product = await pool.query('SELECT * FROM products WHERE id = $1', [productId]);
@@ -319,11 +572,125 @@ app.post('/api/cart', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Yetersiz stok' });
     }
 
-    // Add to cart (simplified - you might want a separate cart table)
-    res.json({ message: 'Ürün sepete eklendi' });
+    // Check if item already in cart
+    const existingItem = await pool.query(
+      'SELECT * FROM cart WHERE user_id = $1 AND product_id = $2',
+      [userId, productId]
+    );
+
+    let result;
+    if (existingItem.rows.length > 0) {
+      // Update quantity
+      const newQuantity = existingItem.rows[0].quantity + quantity;
+
+      if (product.rows[0].stock < newQuantity) {
+        return res.status(400).json({ error: 'Yetersiz stok' });
+      }
+
+      result = await pool.query(
+        'UPDATE cart SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2 AND product_id = $3 RETURNING *',
+        [newQuantity, userId, productId]
+      );
+    } else {
+      // Insert new item
+      result = await pool.query(
+        'INSERT INTO cart (user_id, product_id, quantity) VALUES ($1, $2, $3) RETURNING *',
+        [userId, productId, quantity]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'Ürün sepete eklendi',
+      cartItem: result.rows[0]
+    });
   } catch (error) {
     console.error('Add to cart error:', error);
     res.status(500).json({ error: 'Sepete ekleme hatası' });
+  }
+});
+
+// PUT /api/cart/:productId - Update cart item quantity
+app.put('/api/cart/:productId', authenticateToken, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { quantity } = req.body;
+    const userId = req.user.id;
+
+    if (!quantity || quantity < 1) {
+      return res.status(400).json({ error: 'Geçersiz miktar' });
+    }
+
+    // Check if product exists and has enough stock
+    const product = await pool.query('SELECT * FROM products WHERE id = $1', [productId]);
+    if (product.rows.length === 0) {
+      return res.status(404).json({ error: 'Ürün bulunamadı' });
+    }
+
+    if (product.rows[0].stock < quantity) {
+      return res.status(400).json({ error: 'Yetersiz stok' });
+    }
+
+    // Update cart item
+    const result = await pool.query(
+      'UPDATE cart SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2 AND product_id = $3 RETURNING *',
+      [quantity, userId, productId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Sepet öğesi bulunamadı' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Sepet güncellendi',
+      cartItem: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Update cart error:', error);
+    res.status(500).json({ error: 'Sepet güncelleme hatası' });
+  }
+});
+
+// DELETE /api/cart/:productId - Remove item from cart
+app.delete('/api/cart/:productId', authenticateToken, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const userId = req.user.id;
+
+    const result = await pool.query(
+      'DELETE FROM cart WHERE user_id = $1 AND product_id = $2 RETURNING *',
+      [userId, productId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Sepet öğesi bulunamadı' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Ürün sepetten kaldırıldı'
+    });
+  } catch (error) {
+    console.error('Remove from cart error:', error);
+    res.status(500).json({ error: 'Sepetten kaldırma hatası' });
+  }
+});
+
+// DELETE /api/cart - Clear entire cart
+app.delete('/api/cart', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    await pool.query('DELETE FROM cart WHERE user_id = $1', [userId]);
+
+    res.json({
+      success: true,
+      message: 'Sepet temizlendi'
+    });
+  } catch (error) {
+    console.error('Clear cart error:', error);
+    res.status(500).json({ error: 'Sepet temizleme hatası' });
   }
 });
 
@@ -399,11 +766,11 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 
 app.post('/api/admin/products', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { name, description, price, stock, images } = req.body;
-    
+    const { name, description, price, stock, images, category } = req.body;
+
     const result = await pool.query(
-      'INSERT INTO products (name, description, price, stock, images, created_at) VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING *',
-      [name, description, price, stock, JSON.stringify(images)]
+      'INSERT INTO products (name, description, price, stock, images, category, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+      [name, description, price, stock, JSON.stringify(images), category]
     );
 
     res.status(201).json(result.rows[0]);
@@ -416,11 +783,11 @@ app.post('/api/admin/products', authenticateToken, requireAdmin, async (req, res
 app.put('/api/admin/products/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, price, stock, images } = req.body;
-    
+    const { name, description, price, stock, images, category } = req.body;
+
     const result = await pool.query(
-      'UPDATE products SET name = $1, description = $2, price = $3, stock = $4, images = $5 WHERE id = $6 RETURNING *',
-      [name, description, price, stock, JSON.stringify(images), id]
+      'UPDATE products SET name = $1, description = $2, price = $3, stock = $4, images = $5, category = $6 WHERE id = $7 RETURNING *',
+      [name, description, price, stock, JSON.stringify(images), category, id]
     );
 
     if (result.rows.length === 0) {
@@ -579,7 +946,7 @@ app.delete('/api/users/:userId/addresses/:addressId', authenticateToken, async (
 app.post('/api/orders', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { items, address, paymentMethod, orderNotes, discountCode } = req.body;
+    const { items, address, paymentMethod, orderNotes, discountCode, discountAmount: frontendDiscountAmount } = req.body;
     const userId = req.user.id;
 
     await client.query('BEGIN');
@@ -628,8 +995,11 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     }
 
     // Apply discount if exists
-    let discountAmount = 0;
-    if (discountCode) {
+    // Frontend'den gelen discount miktarını kullan (localStorage'daki kuponlar için)
+    // Eğer frontend discount yoksa database'den kontrol et
+    let discountAmount = frontendDiscountAmount || 0;
+
+    if (discountCode && !frontendDiscountAmount) {
       const discountResult = await client.query(
         'SELECT * FROM discount_codes WHERE code = $1 AND valid_until > NOW()',
         [discountCode]
@@ -652,15 +1022,17 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     // Create order (order_number will be auto-generated by trigger)
     const orderResult = await client.query(
       `INSERT INTO orders
-       (user_id, total_price, subtotal, shipping_fee, payment_method, payment_id, payment_status,
-        status, delivery_address, order_notes, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+       (user_id, total_price, subtotal, shipping_fee, discount_amount, discount_code,
+        payment_method, payment_id, payment_status, status, delivery_address, order_notes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
        RETURNING *`,
       [
         userId,
         totalPrice,
         subtotal,
         shippingFee,
+        discountAmount,
+        discountCode || null,
         paymentMethod || 'mock',
         paymentId,
         paymentStatus,
@@ -719,6 +1091,8 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
         totalPrice: order.total_price,
         subtotal: order.subtotal,
         shippingFee: order.shipping_fee,
+        discountAmount: order.discount_amount || 0,
+        discountCode: order.discount_code || null,
         status: order.status,
         paymentStatus: order.payment_status,
         createdAt: order.created_at
@@ -947,6 +1321,7 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req, res) =
     let query = `
       SELECT
         o.id, o.order_number, o.total_price, o.subtotal, o.shipping_fee,
+        o.discount_amount, o.discount_code,
         o.status, o.payment_status, o.payment_method,
         o.tracking_number, o.cargo_company,
         o.created_at, o.shipped_at, o.delivered_at,

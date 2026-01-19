@@ -19,6 +19,10 @@ import OrderSuccess from './pages/OrderSuccess';
 import TermsOfService from './pages/TermsOfService';
 import DistanceSalesAgreement from './pages/DistanceSalesAgreement';
 import KVKKPolicy from './pages/KVKKPolicy';
+import EmailVerification from './pages/EmailVerification';
+import VerificationPending from './pages/VerificationPending';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 function App() {
   return (
@@ -53,6 +57,10 @@ function App() {
                   } 
                 />
                 <Route path="/arama" element={<SearchResults />} />
+                <Route path="/email-dogrulama-bekleniyor" element={<VerificationPending />} />
+                <Route path="/email-dogrulama" element={<EmailVerification />} />
+                <Route path="/sifremi-unuttum" element={<ForgotPassword />} />
+                <Route path="/sifre-sifirlama" element={<ResetPassword />} />
                 <Route path="/kullanim-kosullari" element={<TermsOfService />} />
                 <Route path="/mesafeli-satis-sozlesmesi" element={<DistanceSalesAgreement />} />
                 <Route path="/kvkk" element={<KVKKPolicy />} />

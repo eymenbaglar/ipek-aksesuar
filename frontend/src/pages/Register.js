@@ -85,8 +85,8 @@ function Register() {
     const result = await register(registerData);
 
     if (result.success) {
-      alert(result.message || 'Kayıt başarılı! Giriş yapabilirsiniz.');
-      navigate('/giris');
+      // Başarılı kayıt - bilgilendirme sayfasına yönlendir
+      navigate('/email-dogrulama-bekleniyor');
     } else {
       setError(result.error || 'Kayıt başarısız. Lütfen tekrar deneyin.');
     }

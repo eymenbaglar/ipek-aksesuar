@@ -9,11 +9,24 @@ function ProductList() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     fetchProducts();
     loadFavorites();
-  }, []);
+  }, [selectedCategory, sortBy, debouncedSearchQuery]);
 
   const loadFavorites = () => {
     const savedFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
@@ -22,27 +35,24 @@ function ProductList() {
 
   const fetchProducts = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/products');
+      setLoading(true);
+
+      // Build query string
+      const params = new URLSearchParams();
+      if (selectedCategory !== 'all') params.append('category', selectedCategory);
+      if (sortBy !== 'newest') params.append('sortBy', sortBy);
+      if (debouncedSearchQuery.trim()) params.append('search', debouncedSearchQuery.trim());
+
+      const response = await fetch(`http://localhost:5000/api/products?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setProducts(data);
       } else {
-        setProducts([
-          { id: 1, name: 'İpek Eşarp - Mavi', price: 299.90, description: 'Saf ipek eşarp', images: [], stock: 10 },
-          { id: 2, name: 'İpek Eşarp - Kırmızı', price: 299.90, description: 'Saf ipek eşarp', images: [], stock: 5 },
-          { id: 3, name: 'İpek Şal - Siyah', price: 499.90, description: 'Premium ipek şal', images: [], stock: 8 },
-          { id: 4, name: 'İpek Kravat - Lacivert', price: 199.90, description: 'Erkek ipek kravat', images: [], stock: 15 },
-          { id: 5, name: 'İpek Mendil Seti', price: 149.90, description: '4 adet ipek mendil', images: [], stock: 0 }
-        ]);
+        setProducts([]);
       }
     } catch (error) {
-      setProducts([
-        { id: 1, name: 'İpek Eşarp - Mavi', price: 299.90, description: 'Saf ipek eşarp', images: [], stock: 10 },
-        { id: 2, name: 'İpek Eşarp - Kırmızı', price: 299.90, description: 'Saf ipek eşarp', images: [], stock: 5 },
-        { id: 3, name: 'İpek Şal - Siyah', price: 499.90, description: 'Premium ipek şal', images: [], stock: 8 },
-        { id: 4, name: 'İpek Kravat - Lacivert', price: 199.90, description: 'Erkek ipek kravat', images: [], stock: 15 },
-        { id: 5, name: 'İpek Mendil Seti', price: 149.90, description: '4 adet ipek mendil', images: [], stock: 0 }
-      ]);
+      console.error('Products fetch error:', error);
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -128,6 +138,106 @@ function ProductList() {
   return (
     <div className="product-list-container">
       <h1 className="product-list-title">Tüm Ürünler</h1>
+
+      {/* Filtreleme ve Arama */}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '15px',
+        marginBottom: '30px',
+        padding: '20px',
+        backgroundColor: '#f8f9fa',
+        borderRadius: '10px',
+        alignItems: 'center'
+      }}>
+        {/* Arama Kutusu */}
+        <div style={{ flex: '1 1 300px' }}>
+          <input
+            type="text"
+            placeholder="Ürün ara..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '95%',
+              padding: '10px 15px',
+              borderRadius: '5px',
+              border: '1px solid #dee2e6',
+              fontSize: '14px'
+            }}
+          />
+        </div>
+
+        {/* Kategori Filtresi */}
+        <div>
+          <label style={{ marginRight: '10px', color: '#495057', fontWeight: '500' }}>Kategori:</label>
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            style={{
+              padding: '10px 15px',
+              borderRadius: '5px',
+              border: '1px solid #dee2e6',
+              fontSize: '14px',
+              cursor: 'pointer',
+              backgroundColor: 'white'
+            }}
+          >
+            <option value="all">Tümü</option>
+            <option value="Eşarp">Eşarp</option>
+            <option value="Şal">Şal</option>
+            <option value="Fular">Fular</option>
+          </select>
+        </div>
+
+        {/* Sıralama */}
+        <div>
+          <label style={{ marginRight: '10px', color: '#495057', fontWeight: '500' }}>Sırala:</label>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            style={{
+              padding: '10px 15px',
+              borderRadius: '5px',
+              border: '1px solid #dee2e6',
+              fontSize: '14px',
+              cursor: 'pointer',
+              backgroundColor: 'white'
+            }}
+          >
+            <option value="newest">En Yeni</option>
+            <option value="name">İsme Göre (A-Z)</option>
+            <option value="price-asc">Fiyat (Düşükten Yükseğe)</option>
+            <option value="price-desc">Fiyat (Yüksekten Düşüğe)</option>
+          </select>
+        </div>
+
+        {/* Temizle Butonu */}
+        {(selectedCategory !== 'all' || sortBy !== 'newest' || debouncedSearchQuery.trim()) && (
+          <button
+            onClick={() => {
+              setSelectedCategory('all');
+              setSortBy('newest');
+              setSearchQuery('');
+            }}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#6c757d',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            Filtreleri Temizle
+          </button>
+        )}
+      </div>
+
+      {/* Sonuç Sayısı */}
+      <p style={{ marginBottom: '20px', color: '#6c757d' }}>
+        {products.length} ürün bulundu
+      </p>
 
       <div className="products-container">
         {products.map(product => {
@@ -232,7 +342,7 @@ function ProductList() {
             Henüz ürün eklenmemiş
           </h2>
           <p className="empty-description">
-            Admin panelden yeni ürünler ekleyebilirsiniz.
+            Diğer ürünlerimize göz atabilirsiniz!
           </p>
         </div>
       )}

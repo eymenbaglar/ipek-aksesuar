@@ -1,6 +1,10 @@
 {
+    "claude.model": "opus",
     "claudeCode.environmentVariables": [
 
     ],
-    "claudeCode.autoCompact": false
+    "autoCompact": false,
+    "anthropic.claude.autoCompact": false,
+    "claude.autoCompact": false,
+
 }

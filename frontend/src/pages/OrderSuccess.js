@@ -9,7 +9,7 @@ const OrderSuccess = () => {
   const { clearCart } = useCart();
 
   const orderData = location.state || {};
-  const { orderNumber, orderId, totalPrice } = orderData;
+  const { orderNumber, orderId, totalPrice, subtotal, shippingFee, discountAmount, discountCode } = orderData;
 
   useEffect(() => {
     // Clear cart when component mounts
@@ -47,7 +47,30 @@ const OrderSuccess = () => {
             <span className="detail-value order-number">{orderNumber}</span>
           </div>
 
-          <div className="detail-row">
+          {subtotal && (
+            <div className="detail-row">
+              <span className="detail-label">Ara Toplam:</span>
+              <span className="detail-value">₺{Number(subtotal).toFixed(2)}</span>
+            </div>
+          )}
+
+          {discountAmount > 0 && discountCode && (
+            <div className="detail-row discount-row">
+              <span className="detail-label">İndirim ({discountCode}):</span>
+              <span className="detail-value discount">-₺{Number(discountAmount).toFixed(2)}</span>
+            </div>
+          )}
+
+          {shippingFee !== undefined && (
+            <div className="detail-row">
+              <span className="detail-label">Kargo:</span>
+              <span className="detail-value">
+                {Number(shippingFee) === 0 ? 'Ücretsiz' : `₺${Number(shippingFee).toFixed(2)}`}
+              </span>
+            </div>
+          )}
+
+          <div className="detail-row total-row">
             <span className="detail-label">Toplam Tutar:</span>
             <span className="detail-value price">₺{Number(totalPrice).toFixed(2)}</span>
           </div>

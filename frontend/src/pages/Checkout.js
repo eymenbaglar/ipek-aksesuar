@@ -18,6 +18,7 @@ const Checkout = () => {
   const [showNewAddressForm, setShowNewAddressForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -47,7 +48,28 @@ const Checkout = () => {
         phone: user.phone || ''
       }));
     }
+
+    // Load applied coupon from sessionStorage
+    const savedCoupon = sessionStorage.getItem('appliedCoupon');
+    if (savedCoupon) {
+      try {
+        setAppliedCoupon(JSON.parse(savedCoupon));
+      } catch (error) {
+        console.error('Error loading coupon:', error);
+      }
+    }
   }, [user]);
+
+  // Kupon indirimi hesapla
+  const getCouponDiscount = () => {
+    if (!appliedCoupon) return 0;
+
+    const subtotal = getTotalPrice();
+    const discountPercent = Number(appliedCoupon.discountPercent) || 0;
+    const discount = (subtotal * discountPercent) / 100;
+
+    return discount;
+  };
 
   // Kargo ücreti hesapla
   const getShippingFee = () => {
@@ -56,7 +78,7 @@ const Checkout = () => {
     // Kargo sistemi kapalıysa ücretsiz
     if (!shippingSettings.enabled) return 0;
 
-    const subtotal = getTotalPrice();
+    const subtotal = getTotalPrice() - getCouponDiscount();
 
     // Ücretsiz kargo limiti kontrolü
     return subtotal >= shippingSettings.freeShippingThreshold ? 0 : shippingSettings.fee;
@@ -73,10 +95,21 @@ const Checkout = () => {
       if (response.ok) {
         const addresses = await response.json();
         setSavedAddresses(addresses);
-        // Auto-select default address
+        // Auto-select default address and populate form
         const defaultAddress = addresses.find(addr => addr.is_default);
         if (defaultAddress) {
           setSelectedAddressId(defaultAddress.id);
+          // Populate form with default address data
+          setFormData(prev => ({
+            ...prev,
+            full_name: defaultAddress.full_name,
+            phone: defaultAddress.phone,
+            city: defaultAddress.city,
+            district: defaultAddress.district,
+            neighborhood: defaultAddress.neighborhood || '',
+            address_line: defaultAddress.address_line,
+            postal_code: defaultAddress.postal_code || ''
+          }));
         }
       }
     } catch (error) {
@@ -302,7 +335,8 @@ const Checkout = () => {
         address: checkoutData.deliveryAddress,
         paymentMethod: 'mock',
         orderNotes: checkoutData.order_notes || formData.order_notes || null,
-        discountCode: null // Discount code özelliği eklendiğinde buradan gönderilecek
+        discountCode: appliedCoupon ? appliedCoupon.code : null,
+        discountAmount: appliedCoupon ? getCouponDiscount() : 0
       };
 
       // Send order to backend
@@ -322,15 +356,20 @@ const Checkout = () => {
         // Clear cart from localStorage and state
         localStorage.removeItem('cart');
 
-        // Clear checkout data
+        // Clear checkout data and coupon
         sessionStorage.removeItem('checkoutData');
+        sessionStorage.removeItem('appliedCoupon');
 
         // Navigate to success page with order info
         navigate('/siparis-basarili', {
           state: {
             orderNumber: result.order.orderNumber,
             orderId: result.order.id,
-            totalPrice: result.order.totalPrice
+            totalPrice: result.order.totalPrice,
+            subtotal: result.order.subtotal,
+            shippingFee: result.order.shippingFee,
+            discountAmount: result.order.discountAmount,
+            discountCode: result.order.discountCode
           },
           replace: true // Prevent going back to checkout
         });
@@ -741,6 +780,12 @@ const Checkout = () => {
                 <span>Ara Toplam:</span>
                 <span>₺{getTotalPrice().toFixed(2)}</span>
               </div>
+              {appliedCoupon && (
+                <div className="total-row" style={{ color: '#28a745' }}>
+                  <span>İndirim ({appliedCoupon.code}):</span>
+                  <span>-₺{getCouponDiscount().toFixed(2)}</span>
+                </div>
+              )}
               <div className="total-row">
                 <span>Kargo:</span>
                 <span>
@@ -753,7 +798,7 @@ const Checkout = () => {
               </div>
               <div className="total-row grand-total">
                 <span>Toplam:</span>
-                <span>₺{(getTotalPrice() + getShippingFee()).toFixed(2)}</span>
+                <span>₺{(getTotalPrice() - getCouponDiscount() + getShippingFee()).toFixed(2)}</span>
               </div>
             </div>
 

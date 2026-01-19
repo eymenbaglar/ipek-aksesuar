@@ -128,6 +128,25 @@
   color: #28a745;
 }
 
+.detail-row.discount-row {
+  background: #d4edda;
+  margin: 0 -25px;
+  padding: 12px 25px;
+}
+
+.detail-value.discount {
+  color: #28a745;
+  font-weight: 700;
+}
+
+.detail-row.total-row {
+  border-top: 2px solid #667eea;
+  margin-top: 8px;
+  padding-top: 16px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
 .info-box {
   background: #e7f3ff;
   border-left: 4px solid #667eea;

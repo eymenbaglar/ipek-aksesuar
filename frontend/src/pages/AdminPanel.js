@@ -36,7 +36,6 @@ function AdminPanel() {
     couponType: 'general' // general, personal, comeback
   });
   const [imagePreview, setImagePreview] = useState('');
-  const [editingProduct, setEditingProduct] = useState(null);
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -94,6 +93,7 @@ function AdminPanel() {
       });
       if (response.ok) {
         const data = await response.json();
+        console.log('Admin Orders Data:', data); // Debug: Kupon bilgilerini görmek için
         setOrders(data);
       }
     } catch (error) {
@@ -817,8 +817,6 @@ function AdminPanel() {
                     <option value="">Kategori Seçin</option>
                     <option value="Eşarp">Eşarp</option>
                     <option value="Şal">Şal</option>
-                    <option value="Kravat">Kravat</option>
-                    <option value="Mendil">Mendil</option>
                     <option value="Fular">Fular</option>
                   </select>
                 </div>
@@ -1223,8 +1221,19 @@ function AdminPanel() {
                           <td style={{ padding: '12px' }}>
                             {new Date(order.created_at).toLocaleDateString('tr-TR')}
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold' }}>
-                            ₺{Number(order.total_price).toFixed(2)}
+                          <td style={{ padding: '12px', textAlign: 'right'}}>
+                            <div style={{ fontWeight: 'bold' }}>
+                              ₺{Number(order.total_price).toFixed(2)}
+                            </div>
+                            {order.discount_code && order.discount_amount > 0 && (
+                              <div style={{
+                                fontSize: '11px',
+                                color: '#28a745',
+                                marginTop: '4px'
+                              }}>
+                                 {order.discount_code}: -₺{Number(order.discount_amount).toFixed(2)}
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: '12px', textAlign: 'center' }}>
                             {order.item_count} ürün

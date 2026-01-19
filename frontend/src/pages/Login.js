@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useCart } from '../contexts/CartContext';
 import './Auth.css';
 
 function Login() {
@@ -9,6 +10,7 @@ function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const { syncGuestCart } = useCart();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -19,9 +21,18 @@ function Login() {
     const result = await login(email, password);
 
     if (result.success) {
+      // Sync guest cart to database after successful login
+      await syncGuestCart();
       navigate('/');
     } else {
-      setError(result.error || 'Giriş başarısız. Lütfen bilgilerinizi kontrol edin.');
+      // Email doğrulanmamışsa özel mesaj göster
+      if (result.errorCode === 'EMAIL_NOT_VERIFIED') {
+        setError(
+          result.error + ' Email gelen kutunuzu kontrol edin veya doğrulama sayfasından yeni email isteyin.'
+        );
+      } else {
+        setError(result.error || 'Giriş başarısız. Lütfen bilgilerinizi kontrol edin.');
+      }
     }
 
     setLoading(false);
@@ -80,6 +91,11 @@ function Login() {
         </form>
 
         <div className="auth-footer">
+          <p className="auth-footer-text">
+            <Link to="/sifremi-unuttum" className="auth-link">
+              Şifremi Unuttum
+            </Link>
+          </p>
           <p className="auth-footer-text">
             Hesabınız yok mu?{' '}
             <Link to="/kayit" className="auth-link">

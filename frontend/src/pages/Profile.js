@@ -5,7 +5,7 @@ import { useCart } from '../contexts/CartContext';
 import OrderDetailsModal from '../components/OrderDetailsModal';
 
 function Profile() {
-  const { user, logout } = useAuth();
+  const { user, logout, isInitialized } = useAuth();
   const navigate = useNavigate();
   const { addToCart } = useCart();
   
@@ -29,6 +29,7 @@ function Profile() {
   });
   const [loading, setLoading] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
+  const [editingAddress, setEditingAddress] = useState(null);
   const [newAddress, setNewAddress] = useState({
     title: '',
     name: '',
@@ -42,13 +43,20 @@ function Profile() {
   });
 
   useEffect(() => {
+    // Auth context initialize olana kadar bekle
+    if (!isInitialized) {
+      return;
+    }
+
+    // Initialize olduktan sonra user yoksa login'e yönlendir
     if (!user) {
       navigate('/giris');
       return;
     }
+
     fetchUserData();
     loadFavorites();
-  }, [user, navigate]);
+  }, [user, navigate, isInitialized]);
 
   const fetchUserData = async () => {
     try {
@@ -103,43 +111,84 @@ function Profile() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/users/${user.id}/addresses`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(newAddress)
-      });
 
-      if (response.ok) {
-        const savedAddress = await response.json();
-        setAddresses([...addresses, savedAddress]);
-
-        // Formu temizle ve modalı kapat
-        setNewAddress({
-          title: '',
-          name: '',
-          address: '',
-          city: '',
-          district: '',
-          neighborhood: '',
-          phone: '',
-          postal_code: '',
-          default: false
+      // Eğer düzenleme modundaysa update, değilse create
+      if (editingAddress) {
+        const response = await fetch(`http://localhost:5000/api/users/${user.id}/addresses/${editingAddress.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(newAddress)
         });
-        setShowAddressModal(false);
-        alert('Adres başarıyla eklendi!');
+
+        if (response.ok) {
+          const updatedAddress = await response.json();
+          setAddresses(addresses.map(addr =>
+            addr.id === editingAddress.id ? updatedAddress : addr
+          ));
+          alert('Adres başarıyla güncellendi!');
+        } else {
+          const error = await response.json();
+          alert(error.error || 'Adres güncellenirken hata oluştu');
+        }
       } else {
-        const error = await response.json();
-        alert(error.error || 'Adres eklenirken hata oluştu');
+        const response = await fetch(`http://localhost:5000/api/users/${user.id}/addresses`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(newAddress)
+        });
+
+        if (response.ok) {
+          const savedAddress = await response.json();
+          setAddresses([...addresses, savedAddress]);
+          alert('Adres başarıyla eklendi!');
+        } else {
+          const error = await response.json();
+          alert(error.error || 'Adres eklenirken hata oluştu');
+        }
       }
+
+      // Formu temizle ve modalı kapat
+      setNewAddress({
+        title: '',
+        name: '',
+        address: '',
+        city: '',
+        district: '',
+        neighborhood: '',
+        phone: '',
+        postal_code: '',
+        default: false
+      });
+      setEditingAddress(null);
+      setShowAddressModal(false);
     } catch (error) {
-      console.error('Adres ekleme hatası:', error);
-      alert('Adres eklenirken hata oluştu');
+      console.error('Adres işlem hatası:', error);
+      alert('Adres işlemi sırasında hata oluştu');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEditAddress = (address) => {
+    setEditingAddress(address);
+    setNewAddress({
+      title: address.title,
+      name: address.full_name,
+      address: address.address_line,
+      city: address.city,
+      district: address.district || '',
+      neighborhood: address.neighborhood || '',
+      phone: address.phone,
+      postal_code: address.postal_code || '',
+      default: address.is_default
+    });
+    setShowAddressModal(true);
   };
 
   const handleDeleteAddress = async (addressId) => {
@@ -359,13 +408,14 @@ function Profile() {
           >
             ⚙️ Hesap Ayarları
           </button>
+          { /*
           <button
             style={tabStyle(activeTab === 'notifications')}
             onClick={() => setActiveTab('notifications')}
           >
             🔔 Bildirimler
-          </button>
-        </div>
+          </button> */}
+        </div> 
 
         {/* Tab İçerikleri */}
         <div style={{ 
@@ -756,33 +806,34 @@ function Profile() {
                     </p>
                     
                     <div style={{ display: 'flex', gap: '10px' }}>
-                      <button style={{
-                        padding: '5px 15px',
-                        backgroundColor: 'transparent',
-                        color: '#667eea',
-                        border: '1px solid #667eea',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '14px'
-                      }}>
+                      <button
+                        onClick={() => handleEditAddress(address)}
+                        style={{
+                          padding: '5px 15px',
+                          backgroundColor: 'transparent',
+                          color: '#667eea',
+                          border: '1px solid #667eea',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          fontSize: '14px'
+                        }}
+                      >
                         Düzenle
                       </button>
-                      {!address.is_default && (
-                        <button
-                          onClick={() => handleDeleteAddress(address.id)}
-                          style={{
-                            padding: '5px 15px',
-                            backgroundColor: 'transparent',
-                            color: '#dc3545',
-                            border: '1px solid #dc3545',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            fontSize: '14px'
-                          }}
-                        >
-                          Sil
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleDeleteAddress(address.id)}
+                        style={{
+                          padding: '5px 15px',
+                          backgroundColor: 'transparent',
+                          color: '#dc3545',
+                          border: '1px solid #dc3545',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          fontSize: '14px'
+                        }}
+                      >
+                        Sil
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -812,7 +863,7 @@ function Profile() {
                     overflowY: 'auto'
                   }}>
                     <h3 style={{ marginBottom: '20px', color: '#2c3e50' }}>
-                      Yeni Adres Ekle
+                      {editingAddress ? 'Adresi Düzenle' : 'Yeni Adres Ekle'}
                     </h3>
 
                     <form onSubmit={handleAddAddress}>
@@ -1016,6 +1067,7 @@ function Profile() {
                           type="button"
                           onClick={() => {
                             setShowAddressModal(false);
+                            setEditingAddress(null);
                             setNewAddress({
                               title: '',
                               name: '',
@@ -1307,7 +1359,7 @@ function Profile() {
             </div>
           )}
 
-          {/* Bildirimler Tab */}
+          {/* Bildirimler Tab 
           {activeTab === 'notifications' && (
             <div>
               <h2 style={{ marginBottom: '30px', color: '#2c3e50' }}>
@@ -1399,8 +1451,8 @@ function Profile() {
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          )} */ }
+        </div> 
 
         {/* Hızlı Linkler */}
         <div style={{

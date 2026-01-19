@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './OrderDetailsModal.css';
 import RefundRequestModal from './RefundRequestModal';
 
@@ -7,11 +7,7 @@ function OrderDetailsModal({ orderId, onClose }) {
   const [loading, setLoading] = useState(true);
   const [showRefundModal, setShowRefundModal] = useState(false);
 
-  useEffect(() => {
-    fetchOrderDetails();
-  }, [orderId]);
-
-  const fetchOrderDetails = async () => {
+  const fetchOrderDetails = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`http://localhost:5000/api/orders/${orderId}`, {
@@ -32,7 +28,11 @@ function OrderDetailsModal({ orderId, onClose }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [orderId, onClose]);
+
+  useEffect(() => {
+    fetchOrderDetails();
+  }, [fetchOrderDetails]);
 
   const getStatusText = (status) => {
     switch(status) {
@@ -248,6 +248,12 @@ function OrderDetailsModal({ orderId, onClose }) {
               <span>Ara Toplam:</span>
               <span>{formatPrice(orderDetails.subtotal)}</span>
             </div>
+            {orderDetails.discount_code && orderDetails.discount_amount > 0 && (
+              <div className="price-row" style={{ color: '#28a745', background: '#d4edda', margin: '0 -20px', padding: '8px 20px' }}>
+                <span>İndirim ({orderDetails.discount_code}):</span>
+                <span>-{formatPrice(orderDetails.discount_amount)}</span>
+              </div>
+            )}
             <div className="price-row">
               <span>Kargo Ücreti:</span>
               <span>{formatPrice(orderDetails.shipping_fee)}</span>

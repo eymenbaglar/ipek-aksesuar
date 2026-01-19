@@ -65,15 +65,21 @@ function Navbar() {
                 </div>
                 <div
                   className="suggestion-item"
-                  onClick={() => handleSuggestionClick('İpek Eşarp')}
+                  onClick={() => handleSuggestionClick('Eşarp')}
                 >
-                  🔍 İpek Eşarp
+                  🔍 Eşarp
                 </div>
                 <div
                   className="suggestion-item"
                   onClick={() => handleSuggestionClick('Şal')}
                 >
                   🔍 Şal
+                </div>
+                <div
+                  className="suggestion-item"
+                  onClick={() => handleSuggestionClick('Fular')}
+                >
+                  🔍 Fular
                 </div>
               </div>
             )}

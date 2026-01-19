@@ -254,8 +254,142 @@ const sendOrderShippedEmail = async (order, user, orderItems) => {
   }
 };
 
+// Doğrulama emaili gönder
+const sendVerificationEmail = async (user, verificationToken) => {
+  try {
+    const transporter = createTransporter();
+
+    // Doğrulama URL'i oluştur
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/email-dogrulama?token=${verificationToken}`;
+
+    // Template için replacement değerleri hazırla
+    const replacements = {
+      USER_NAME: user.name,
+      VERIFICATION_URL: verificationUrl,
+      CURRENT_YEAR: new Date().getFullYear()
+    };
+
+    // HTML template'ini yükle
+    const htmlContent = await loadTemplate('verification-email.html', replacements);
+
+    // Email gönder
+    const mailOptions = {
+      from: `"İpek Aksesuar" <${process.env.SMTP_USER}>`,
+      to: user.email,
+      subject: 'Email Adresinizi Doğrulayın - İpek Aksesuar',
+      html: htmlContent
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Doğrulama emaili gönderildi:', info.messageId);
+
+    // Email log kaydet (başarılı)
+    if (pool) {
+      await logEmail(
+        user.id,
+        null,
+        'email_verification',
+        user.email,
+        mailOptions.subject,
+        'sent',
+        null,
+        info.messageId
+      );
+    }
+
+    return { success: true, messageId: info.messageId };
+
+  } catch (error) {
+    console.error('❌ Email gönderme hatası:', error);
+
+    // Email log kaydet (başarısız)
+    if (pool) {
+      await logEmail(
+        user.id,
+        null,
+        'email_verification',
+        user.email,
+        'Email Adresinizi Doğrulayın - İpek Aksesuar',
+        'failed',
+        error.message,
+        null
+      );
+    }
+
+    return { success: false, error: error.message };
+  }
+};
+
+// Şifre sıfırlama emaili gönder
+const sendPasswordResetEmail = async (user, resetToken) => {
+  try {
+    const transporter = createTransporter();
+
+    // Şifre sıfırlama URL'i oluştur
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/sifre-sifirlama?token=${resetToken}`;
+
+    // Template için replacement değerleri hazırla
+    const replacements = {
+      USER_NAME: user.name,
+      RESET_URL: resetUrl,
+      CURRENT_YEAR: new Date().getFullYear()
+    };
+
+    // HTML template'ini yükle
+    const htmlContent = await loadTemplate('password-reset.html', replacements);
+
+    // Email gönder
+    const mailOptions = {
+      from: `"İpek Aksesuar" <${process.env.SMTP_USER}>`,
+      to: user.email,
+      subject: 'Şifre Sıfırlama Talebi - İpek Aksesuar',
+      html: htmlContent
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Şifre sıfırlama emaili gönderildi:', info.messageId);
+
+    // Email log kaydet (başarılı)
+    if (pool) {
+      await logEmail(
+        user.id,
+        null,
+        'password_reset',
+        user.email,
+        mailOptions.subject,
+        'sent',
+        null,
+        info.messageId
+      );
+    }
+
+    return { success: true, messageId: info.messageId };
+
+  } catch (error) {
+    console.error('❌ Email gönderme hatası:', error);
+
+    // Email log kaydet (başarısız)
+    if (pool) {
+      await logEmail(
+        user.id,
+        null,
+        'password_reset',
+        user.email,
+        'Şifre Sıfırlama Talebi - İpek Aksesuar',
+        'failed',
+        error.message,
+        null
+      );
+    }
+
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   setPool,
   sendOrderConfirmationEmail,
-  sendOrderShippedEmail
+  sendOrderShippedEmail,
+  sendVerificationEmail,
+  sendPasswordResetEmail
 };
