@@ -1,11 +1,16 @@
 // server.js
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
+const { body, validationResult, param, query } = require('express-validator');
+const DOMPurify = require('isomorphic-dompurify');
+const cookieParser = require('cookie-parser');
 const emailService = require('./utils/emailService');
 const { sendOrderConfirmationEmail, sendOrderShippedEmail } = emailService;
 require('dotenv').config();
@@ -13,9 +18,187 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Rate Limiting Configuration
+// Genel API rate limiter - tüm endpointler için
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 dakika
+  max: 100, // 15 dakikada maksimum 100 istek
+  message: 'Bu IP adresinden çok fazla istek geldi. Lütfen daha sonra tekrar deneyin.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Auth endpointleri için daha katı limiter
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 dakika
+  max: 5, // 15 dakikada maksimum 5 giriş denemesi
+  message: 'Çok fazla giriş denemesi. Lütfen 15 dakika sonra tekrar deneyin.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Password reset için limiter
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 saat
+  max: 3, // 1 saatte maksimum 3 şifre sıfırlama denemesi
+  message: 'Çok fazla şifre sıfırlama talebi. Lütfen 1 saat sonra tekrar deneyin.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Email verification için limiter
+const emailVerificationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 saat
+  max: 5, // 1 saatte maksimum 5 doğrulama email'i
+  message: 'Çok fazla email doğrulama talebi. Lütfen 1 saat sonra tekrar deneyin.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Sipariş oluşturma için limiter
+const orderLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 saat
+  max: 10, // 1 saatte maksimum 10 sipariş
+  message: 'Çok fazla sipariş talebi. Lütfen daha sonra tekrar deneyin.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Admin işlemleri için limiter
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 dakika
+  max: 50, // 15 dakikada maksimum 50 admin işlemi
+  message: 'Çok fazla admin işlemi. Lütfen daha sonra tekrar deneyin.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Validation Helper Functions
+// XSS sanitization helper
+const sanitizeInput = (input) => {
+  if (typeof input === 'string') {
+    return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  }
+  if (typeof input === 'object' && input !== null) {
+    const sanitized = {};
+    for (const key in input) {
+      sanitized[key] = sanitizeInput(input[key]);
+    }
+    return sanitized;
+  }
+  return input;
+};
+
+// Validation error handler middleware
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      error: 'Validation hatası',
+      details: errors.array().map(err => `${err.path}: ${err.msg}`)
+    });
+  }
+  next();
+};
+
+// XSS sanitization middleware - tüm input'ları temizle
+const sanitizeRequestBody = (req, res, next) => {
+  if (req.body) {
+    req.body = sanitizeInput(req.body);
+  }
+  if (req.query) {
+    req.query = sanitizeInput(req.query);
+  }
+  if (req.params) {
+    req.params = sanitizeInput(req.params);
+  }
+  next();
+};
+
+// CSRF Protection - Double Submit Cookie Pattern
+const csrfTokens = new Map(); // Production'da Redis kullanılmalı
+
+// CSRF token generator
+const generateCsrfToken = () => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+// CSRF token verification middleware
+const verifyCsrfToken = (req, res, next) => {
+  // CSRF protection'ı production'da aktif et
+  // Development'ta token kontrolü yapma (frontend henüz entegre değil)
+  if (process.env.NODE_ENV !== 'production') {
+    return next();
+  }
+
+  // GET, HEAD, OPTIONS isteklerini atla (sadece state-changing operations için gerekli)
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+
+  const tokenFromHeader = req.headers['x-csrf-token'];
+  const tokenFromCookie = req.cookies['csrf-token'];
+
+  if (!tokenFromHeader || !tokenFromCookie) {
+    return res.status(403).json({ error: 'CSRF token eksik' });
+  }
+
+  if (tokenFromHeader !== tokenFromCookie) {
+    return res.status(403).json({ error: 'CSRF token geçersiz' });
+  }
+
+  // Token'ı Map'ten kontrol et (ek güvenlik katmanı)
+  if (!csrfTokens.has(tokenFromHeader)) {
+    return res.status(403).json({ error: 'CSRF token bulunamadı veya süresi dolmuş' });
+  }
+
+  next();
+};
+
 // Middleware
-app.use(cors());
-app.use(express.json());
+// Helmet.js - HTTP Security Headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // React inline styles için
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // CDN'ler için
+  hsts: {
+    maxAge: 31536000, // 1 yıl
+    includeSubDomains: true,
+    preload: true
+  },
+  frameguard: {
+    action: 'deny' // Clickjacking koruması
+  },
+  noSniff: true, // MIME type sniffing koruması
+  xssFilter: true, // XSS filter
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+}));
+
+// CORS Configuration
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true, // Cookie'lerin gönderilmesine izin ver
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+  exposedHeaders: ['X-CSRF-Token'],
+  maxAge: 600 // Preflight cache süresi (10 dakika)
+}));
+
+app.use(cookieParser());
+app.use(express.json({ limit: '10mb' })); // JSON payload limit
+app.use(sanitizeRequestBody); // XSS sanitization - tüm input'ları temizle
+app.use(generalLimiter); // Genel rate limiter tüm endpointlere uygulanır
 
 // Database connection
 const pool = new Pool({
@@ -51,6 +234,52 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Validation Rules
+const registerValidation = [
+  body('email').isEmail().normalizeEmail().withMessage('Geçerli bir email adresi giriniz'),
+  body('password').isLength({ min: 6 }).withMessage('Şifre en az 6 karakter olmalıdır'),
+  body('name').trim().notEmpty().isLength({ min: 2, max: 50 }).withMessage('İsim 2-50 karakter arasında olmalıdır'),
+  body('surname').trim().notEmpty().isLength({ min: 2, max: 50 }).withMessage('Soyisim 2-50 karakter arasında olmalıdır'),
+];
+
+const loginValidation = [
+  body('email').isEmail().normalizeEmail().withMessage('Geçerli bir email adresi giriniz'),
+  body('password').notEmpty().withMessage('Şifre gereklidir'),
+];
+
+const forgotPasswordValidation = [
+  body('email').isEmail().normalizeEmail().withMessage('Geçerli bir email adresi giriniz'),
+];
+
+const resetPasswordValidation = [
+  body('token').notEmpty().isLength({ min: 32 }).withMessage('Geçersiz token'),
+  body('newPassword').isLength({ min: 6 }).withMessage('Şifre en az 6 karakter olmalıdır'),
+];
+
+const productValidation = [
+  body('name').trim().notEmpty().isLength({ min: 2, max: 200 }).withMessage('Ürün adı 2-200 karakter arasında olmalıdır'),
+  body('description').trim().notEmpty().isLength({ min: 10, max: 2000 }).withMessage('Açıklama 10-2000 karakter arasında olmalıdır'),
+  body('price').isFloat({ min: 0.01 }).withMessage('Fiyat 0\'dan büyük olmalıdır'),
+  body('stock').isInt({ min: 0 }).withMessage('Stok 0 veya daha büyük olmalıdır'),
+  body('category').trim().notEmpty().isLength({ max: 100 }).withMessage('Kategori gereklidir'),
+];
+
+const orderValidation = [
+  body('items').isArray({ min: 1 }).withMessage('Sepet boş olamaz'),
+  body('items.*.productId').isInt().withMessage('Geçersiz ürün ID'),
+  body('items.*.quantity').isInt({ min: 1 }).withMessage('Miktar en az 1 olmalıdır'),
+  body('address.fullName').trim().notEmpty().isLength({ min: 2, max: 100 }).withMessage('Ad soyad gereklidir'),
+  body('address.phone').trim().notEmpty().matches(/^[0-9]{10,11}$/).withMessage('Geçerli bir telefon numarası giriniz'),
+  body('address.addressLine').trim().notEmpty().isLength({ min: 10, max: 500 }).withMessage('Adres en az 10 karakter olmalıdır'),
+  body('address.city').trim().notEmpty().isLength({ min: 2, max: 50 }).withMessage('Şehir gereklidir'),
+  body('address.district').trim().notEmpty().isLength({ min: 2, max: 50 }).withMessage('İlçe gereklidir'),
+  body('address.postalCode').optional().trim().isLength({ max: 10 }),
+];
+
+const emailVerificationValidation = [
+  query('token').notEmpty().isLength({ min: 32 }).withMessage('Geçersiz token'),
+];
+
 // Admin middleware
 const requireAdmin = (req, res, next) => {
   if (req.user.role !== 'admin') {
@@ -59,8 +288,34 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// CSRF Token endpoint
+app.get('/api/csrf-token', (req, res) => {
+  const token = generateCsrfToken();
+
+  // Token'ı Map'e ekle - 1 saat geçerli olsun
+  csrfTokens.set(token, Date.now() + 3600000);
+
+  // 1 saatlik token'ları temizle (memory leak prevention)
+  const now = Date.now();
+  for (const [key, expiry] of csrfTokens.entries()) {
+    if (expiry < now) {
+      csrfTokens.delete(key);
+    }
+  }
+
+  // Token'ı cookie ve response'da gönder
+  res.cookie('csrf-token', token, {
+    httpOnly: false, // Frontend'in okuyabilmesi için
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 3600000 // 1 saat
+  });
+
+  res.json({ csrfToken: token });
+});
+
 // Auth Routes
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, registerValidation, handleValidationErrors, verifyCsrfToken, async (req, res) => {
   try {
     const { email, password, name, surname } = req.body;
     
@@ -121,7 +376,7 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Email doğrulama endpoint'i
-app.get('/api/auth/verify-email', async (req, res) => {
+app.get('/api/auth/verify-email', emailVerificationLimiter, emailVerificationValidation, handleValidationErrors, async (req, res) => {
   try {
     const { token } = req.query;
 
@@ -180,7 +435,7 @@ app.get('/api/auth/verify-email', async (req, res) => {
 });
 
 // Doğrulama emailini tekrar gönder
-app.post('/api/auth/resend-verification', async (req, res) => {
+app.post('/api/auth/resend-verification', emailVerificationLimiter, forgotPasswordValidation, handleValidationErrors, async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -251,7 +506,7 @@ app.post('/api/auth/resend-verification', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, loginValidation, handleValidationErrors, verifyCsrfToken, async (req, res) => {
   try {
     const { email, password } = req.body;
     
@@ -297,7 +552,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/forgot-password', async (req, res) => {
+app.post('/api/auth/forgot-password', passwordResetLimiter, forgotPasswordValidation, handleValidationErrors, async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -345,7 +600,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   }
 });
 
-app.post('/api/auth/reset-password', async (req, res) => {
+app.post('/api/auth/reset-password', passwordResetLimiter, resetPasswordValidation, handleValidationErrors, async (req, res) => {
   try {
     const { token, newPassword } = req.body;
 
@@ -764,7 +1019,7 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
-app.post('/api/admin/products', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/products', authenticateToken, requireAdmin, adminLimiter, productValidation, handleValidationErrors, verifyCsrfToken, async (req, res) => {
   try {
     const { name, description, price, stock, images, category } = req.body;
 
@@ -780,7 +1035,7 @@ app.post('/api/admin/products', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-app.put('/api/admin/products/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/products/:id', authenticateToken, requireAdmin, adminLimiter, productValidation, handleValidationErrors, verifyCsrfToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, price, stock, images, category } = req.body;
@@ -801,7 +1056,7 @@ app.put('/api/admin/products/:id', authenticateToken, requireAdmin, async (req, 
   }
 });
 
-app.delete('/api/admin/products/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.delete('/api/admin/products/:id', authenticateToken, requireAdmin, adminLimiter, verifyCsrfToken, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -818,7 +1073,7 @@ app.delete('/api/admin/products/:id', authenticateToken, requireAdmin, async (re
   }
 });
 
-app.post('/api/admin/discount-codes', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/discount-codes', authenticateToken, requireAdmin, adminLimiter, async (req, res) => {
   try {
     const { code, discountPercent, validUntil } = req.body;
     
@@ -943,10 +1198,10 @@ app.delete('/api/users/:userId/addresses/:addressId', authenticateToken, async (
 
 // Order Routes
 // 1. Create new order (with mock payment)
-app.post('/api/orders', authenticateToken, async (req, res) => {
+app.post('/api/orders', authenticateToken, orderLimiter, orderValidation, handleValidationErrors, verifyCsrfToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { items, address, paymentMethod, orderNotes, discountCode, discountAmount: frontendDiscountAmount } = req.body;
+    const { items, address, paymentMethod, orderNotes, discountCode, discountAmount: frontendDiscountAmount, shippingFee: frontendShippingFee } = req.body;
     const userId = req.user.id;
 
     await client.query('BEGIN');
@@ -1009,8 +1264,9 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       }
     }
 
-    // Calculate shipping fee (you can customize this logic)
-    const shippingFee = subtotal > 500 ? 0 : 29.90;
+    // Use shipping fee from frontend (admin panel settings)
+    // Frontend zaten admin panel ayarlarına göre hesaplıyor
+    const shippingFee = frontendShippingFee !== undefined ? Number(frontendShippingFee) : 0;
 
     // Calculate total
     const totalPrice = subtotal - discountAmount + shippingFee;
@@ -1192,7 +1448,7 @@ app.get('/api/orders/:orderId', authenticateToken, async (req, res) => {
 });
 
 // 4. Update order status (Admin only)
-app.put('/api/admin/orders/:orderId/status', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/orders/:orderId/status', authenticateToken, requireAdmin, adminLimiter, async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status, trackingNumber, cargoCompany, notes } = req.body;
@@ -1409,7 +1665,7 @@ app.get('/api/admin/email-logs', authenticateToken, requireAdmin, async (req, re
 
 // Cancel/Refund Routes
 // 1. Cancel order (User - only for pending, payment_received, preparing)
-app.post('/api/orders/:orderId/cancel', authenticateToken, async (req, res) => {
+app.post('/api/orders/:orderId/cancel', authenticateToken, orderLimiter, async (req, res) => {
   const client = await pool.connect();
   try {
     const { orderId } = req.params;
@@ -1492,7 +1748,7 @@ app.post('/api/orders/:orderId/cancel', authenticateToken, async (req, res) => {
 });
 
 // 2. Create refund request (User - only for delivered orders within 14 days)
-app.post('/api/orders/:orderId/refund', authenticateToken, async (req, res) => {
+app.post('/api/orders/:orderId/refund', authenticateToken, orderLimiter, async (req, res) => {
   try {
     const { orderId } = req.params;
     const { reason, description, photos } = req.body;
@@ -1629,7 +1885,7 @@ app.get('/api/admin/refund-requests', authenticateToken, requireAdmin, async (re
 });
 
 // 5. Update refund request status (Admin)
-app.put('/api/admin/refund-requests/:requestId', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/refund-requests/:requestId', authenticateToken, requireAdmin, adminLimiter, async (req, res) => {
   const client = await pool.connect();
   try {
     const { requestId } = req.params;
