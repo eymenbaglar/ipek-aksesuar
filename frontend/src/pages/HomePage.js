@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useCart } from '../contexts/CartContext';
@@ -9,6 +9,8 @@ function HomePage() {
   const { addToCart } = useCart();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [featuredProducts, setFeaturedProducts] = useState([]);
+  const [activeScrollIndex, setActiveScrollIndex] = useState(0);
+  const itemRefs = useRef([]);
 
   // Hero Banner Slider Verileri
   const slides = [
@@ -58,12 +60,36 @@ function HomePage() {
     fetchFeaturedProducts();
   }, []);
 
+  // Scroll ile aktif kartı güncelle
+  useEffect(() => {
+    if (featuredProducts.length === 0) return;
+    const handleScroll = () => {
+      const viewportMid = window.innerHeight / 2;
+      let closest = 0;
+      let closestDist = Infinity;
+      itemRefs.current.forEach((el, index) => {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const elMid = rect.top + rect.height / 2;
+        const dist = Math.abs(elMid - viewportMid);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = index;
+        }
+      });
+      setActiveScrollIndex(closest);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [featuredProducts]);
+
+
   const fetchFeaturedProducts = async () => {
     try {
       const response = await fetch('http://localhost:5000/api/products');
       if (response.ok) {
         const data = await response.json();
-        setFeaturedProducts(data.slice(0, 4));
+        setFeaturedProducts(data.slice(0, 6));
       } else {
         setFeaturedProducts([
           { id: 1, name: 'İpek Eşarp - Mavi', price: 299.90, badge: 'Yeni', oldPrice: 399.90 },
@@ -95,7 +121,10 @@ function HomePage() {
     if (typeof product.images === 'string') {
       try {
         const parsed = JSON.parse(product.images);
-        return Array.isArray(parsed) ? parsed : [];
+        if (Array.isArray(parsed)) return parsed;
+        // {"0": "url", "1": "url"} gibi object ise values al
+        if (parsed && typeof parsed === 'object') return Object.values(parsed).filter(url => url);
+        return [];
       } catch {
         return product.images.split(',').map(url => url.trim()).filter(url => url);
       }
@@ -103,6 +132,8 @@ function HomePage() {
 
     return Array.isArray(product.images) ? product.images : [];
   };
+
+  const scrollProducts = featuredProducts.slice(0, 3);
 
   const organizationSchema = {
     '@context': 'https://schema.org',
@@ -171,34 +202,184 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Özellikler Bölümü */}
-      <section className="features-section">
-        <div className="features-grid">
-          <div className="feature-item">
-            <div className="feature-icon">🚚</div>
-            <h3 className="feature-title">Hızlı Kargo</h3>
-            <p className="feature-description">2-3 iş günü içinde teslim</p>
-          </div>
+      {/* Scroll Sticky Ürün Bölümü */}
+      {scrollProducts.length > 0 && (() => {
+        return (
+          <section style={{ backgroundColor: '#fff', padding: '80px 0' }}>
+            <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 40px' }}>
+              <h2 style={{
+                textAlign: 'center',
+                fontSize: '32px',
+                fontWeight: '700',
+                color: '#2d3748',
+                marginBottom: '60px',
+                letterSpacing: '-0.5px'
+              }}>
+                Koleksiyondan Seçmeler
+              </h2>
+              <div style={{ display: 'flex', gap: '60px', alignItems: 'flex-start', position: 'relative' }}>
 
-          <div className="feature-item">
-            <div className="feature-icon">✨</div>
-            <h3 className="feature-title">%100 İpek</h3>
-            <p className="feature-description">Saf ipek garantisi</p>
-          </div>
+                {/* Sol: Sticky Görsel */}
+                <div style={{ flex: '0 0 45%', position: 'sticky', top: '15vh', alignSelf: 'flex-start' }}>
+                  <div style={{
+                    borderRadius: '16px',
+                    overflow: 'hidden',
+                    backgroundColor: '#f8f9fa',
+                    aspectRatio: '1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 20px 60px rgba(0,0,0,0.1)',
+                    transition: 'all 0.4s ease'
+                  }}>
+                    {(() => {
+                      const active = scrollProducts[activeScrollIndex];
+                      if (!active) return null;
+                      const imgs = getProductImages(active);
+                      return imgs.length > 0 ? (
+                        <img
+                          key={active.id}
+                          src={imgs[0]}
+                          alt={active.name}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            transition: 'opacity 0.4s ease'
+                          }}
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: '80px' }}>🧣</div>
+                      );
+                    })()}
+                  </div>
+                  {/* Aktif ürün bilgisi */}
+                  {(() => {
+                    const active = scrollProducts[activeScrollIndex];
+                    if (!active) return null;
+                    return (
+                      <div style={{ marginTop: '24px', textAlign: 'center' }}>
+                        <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#2d3748', marginBottom: '8px' }}>
+                          {active.name}
+                        </h3>
+                        <p style={{ fontSize: '20px', color: '#667eea', fontWeight: '600' }}>
+                          ₺{Number(active.price).toFixed(2)}
+                        </p>
+                        <button
+                          onClick={() => navigate(`/urun/${active.id}`)}
+                          style={{
+                            marginTop: '16px',
+                            padding: '12px 32px',
+                            backgroundColor: '#667eea',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '15px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            transition: 'background-color 0.2s ease'
+                          }}
+                          onMouseOver={(e) => e.target.style.backgroundColor = '#5a6fd8'}
+                          onMouseOut={(e) => e.target.style.backgroundColor = '#667eea'}
+                        >
+                          Ürünü İncele →
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
 
-          <div className="feature-item">
-            <div className="feature-icon">🎁</div>
-            <h3 className="feature-title">Özel Paket</h3>
-            <p className="feature-description">Hediye paketi seçeneği</p>
-          </div>
-
-          <div className="feature-item">
-            <div className="feature-icon">💳</div>
-            <h3 className="feature-title">Güvenli Ödeme</h3>
-            <p className="feature-description">256 bit SSL güvenlik</p>
-          </div>
-        </div>
-      </section>
+                {/* Sağ: Ürün Kartları */}
+                <div style={{ flex: '1', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {scrollProducts.map((product, index) => {
+                    const imgs = getProductImages(product);
+                    const isActive = activeScrollIndex === index;
+                    return (
+                      <div
+                        key={product.id}
+                        ref={el => { itemRefs.current[index] = el; }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: isActive ? '28px 32px' : '20px 32px',
+                          borderRadius: '16px',
+                          backgroundColor: isActive ? '#f0f4ff' : '#f8f9fa',
+                          border: isActive ? '2px solid #667eea' : '2px solid transparent',
+                          transition: 'all 0.3s ease',
+                          cursor: 'pointer',
+                          gap: '20px',
+                          minHeight: '120px'
+                        }}
+                        onClick={() => navigate(`/urun/${product.id}`)}
+                      >
+                        {/* Küçük resim */}
+                        <div style={{
+                          width: isActive ? '90px' : '70px',
+                          height: isActive ? '90px' : '70px',
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          flexShrink: 0,
+                          backgroundColor: '#e9ecef',
+                          transition: 'all 0.3s ease'
+                        }}>
+                          {imgs.length > 0 ? (
+                            <img src={imgs[0]} alt={product.name}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: '28px' }}>🧣</div>
+                          )}
+                        </div>
+                        {/* Yazılar */}
+                        <div style={{ flex: 1 }}>
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            color: isActive ? '#667eea' : '#adb5bd',
+                            letterSpacing: '2px',
+                            textTransform: 'uppercase',
+                            display: 'block',
+                            marginBottom: '6px',
+                            transition: 'color 0.3s ease'
+                          }}>
+                            
+                          </span>
+                          <h3 style={{
+                            fontSize: isActive ? '18px' : '16px',
+                            fontWeight: '700',
+                            color: isActive ? '#2d3748' : '#6c757d',
+                            marginBottom: '4px',
+                            transition: 'all 0.3s ease'
+                          }}>
+                            {product.name}
+                          </h3>
+                          <p style={{
+                            fontSize: '15px',
+                            color: isActive ? '#667eea' : '#adb5bd',
+                            fontWeight: '600',
+                            transition: 'color 0.3s ease'
+                          }}>
+                            ₺{Number(product.price).toFixed(2)}
+                          </p>
+                        </div>
+                        {/* Ok işareti */}
+                        <span style={{
+                          fontSize: '20px',
+                          color: isActive ? '#667eea' : '#dee2e6',
+                          transition: 'color 0.3s ease',
+                          flexShrink: 0
+                        }}>→</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Öne Çıkan Ürünler */}
       <section className="featured-section">

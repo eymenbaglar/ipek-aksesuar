@@ -92,7 +92,9 @@ function ProductList() {
     if (typeof product.images === 'string') {
       try {
         const parsed = JSON.parse(product.images);
-        return Array.isArray(parsed) ? parsed : [];
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object') return Object.values(parsed).filter(url => url);
+        return [];
       } catch {
         return product.images.split(',').map(url => url.trim()).filter(url => url);
       }

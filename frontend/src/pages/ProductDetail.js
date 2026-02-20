@@ -107,19 +107,22 @@ const toggleFavorite = () => {
   // Resim dizisini kontrol et ve düzelt
   const getProductImages = () => {
     if (!product.images) return [];
-    
+
     // Eğer images string ise array'e çevir
     if (typeof product.images === 'string') {
       try {
         // JSON string ise parse et
         const parsed = JSON.parse(product.images);
-        return Array.isArray(parsed) ? parsed : [];
+        if (Array.isArray(parsed)) return parsed;
+        // {"0": "url", "1": "url"} gibi object ise values al
+        if (parsed && typeof parsed === 'object') return Object.values(parsed).filter(url => url);
+        return [];
       } catch {
         // JSON değilse virgülle ayır
         return product.images.split(',').map(url => url.trim()).filter(url => url);
       }
     }
-    
+
     // Zaten array ise direkt döndür
     return Array.isArray(product.images) ? product.images : [];
   };
