@@ -141,7 +141,7 @@ const sendOrderConfirmationEmail = async (order, user, orderItems) => {
 
     // Email gönder
     const mailOptions = {
-      from: `"İpek Aksesuar" <${process.env.SMTP_USER}>`,
+      from: `"MEBS İpek Aksesuar" <${process.env.SMTP_USER}>`,
       to: user.email,
       subject: `Sipariş Onayı - ${order.order_number}`,
       html: htmlContent
@@ -212,7 +212,7 @@ const sendOrderShippedEmail = async (order, user, orderItems) => {
 
     // Email gönder
     const mailOptions = {
-      from: `"İpek Aksesuar" <${process.env.SMTP_USER}>`,
+      from: `"MEBS İpek Aksesuar" <${process.env.SMTP_USER}>`,
       to: user.email,
       subject: `Siparişiniz Kargoya Verildi - ${order.order_number}`,
       html: htmlContent
@@ -274,9 +274,9 @@ const sendVerificationEmail = async (user, verificationToken) => {
 
     // Email gönder
     const mailOptions = {
-      from: `"İpek Aksesuar" <${process.env.SMTP_USER}>`,
+      from: `"MEBS İpek Aksesuar" <${process.env.SMTP_USER}>`,
       to: user.email,
-      subject: 'Email Adresinizi Doğrulayın - İpek Aksesuar',
+      subject: 'Email Adresinizi Doğrulayın - MEBS İpek Aksesuar',
       html: htmlContent
     };
 
@@ -309,7 +309,7 @@ const sendVerificationEmail = async (user, verificationToken) => {
         null,
         'email_verification',
         user.email,
-        'Email Adresinizi Doğrulayın - İpek Aksesuar',
+        'Email Adresinizi Doğrulayın - MEBS İpek Aksesuar',
         'failed',
         error.message,
         null
@@ -340,9 +340,9 @@ const sendPasswordResetEmail = async (user, resetToken) => {
 
     // Email gönder
     const mailOptions = {
-      from: `"İpek Aksesuar" <${process.env.SMTP_USER}>`,
+      from: `"MEBS İpek Aksesuar" <${process.env.SMTP_USER}>`,
       to: user.email,
-      subject: 'Şifre Sıfırlama Talebi - İpek Aksesuar',
+      subject: 'Şifre Sıfırlama Talebi - MEBS İpek Aksesuar',
       html: htmlContent
     };
 
@@ -375,7 +375,7 @@ const sendPasswordResetEmail = async (user, resetToken) => {
         null,
         'password_reset',
         user.email,
-        'Şifre Sıfırlama Talebi - İpek Aksesuar',
+        'Şifre Sıfırlama Talebi - MEBS İpek Aksesuar',
         'failed',
         error.message,
         null

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../contexts/AuthContext';
 import './Auth.css';
 
@@ -108,6 +109,11 @@ function Register() {
   };
 
   return (
+    <>
+    <Helmet>
+      <title>Kayıt Ol | İpek Aksesuar</title>
+      <meta name="robots" content="noindex, nofollow" />
+    </Helmet>
     <div className="auth-container">
       <div className="auth-card">
         <div className="auth-header">
@@ -288,6 +294,7 @@ function Register() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

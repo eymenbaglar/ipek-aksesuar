@@ -22,7 +22,9 @@ function AdminPanel() {
     price: '',
     stock: '',
     images: '',
-    category: ''
+    category: '',
+    size: '',
+    variant_group_id: ''
   });
   const [newCoupon, setNewCoupon] = useState({
     code: '',
@@ -279,7 +281,7 @@ function AdminPanel() {
       if (response.ok) {
         alert('Ürün eklendi!');
         fetchProducts();
-        setNewProduct({ name: '', description: '', price: '', stock: '', images: '', category: '' });
+        setNewProduct({ name: '', description: '', price: '', stock: '', images: '', category: '', size: '', variant_group_id: '' });
         setImagePreview('');
       }
     } catch (error) {
@@ -819,6 +821,23 @@ function AdminPanel() {
                     <option value="Şal">Şal</option>
                     <option value="Fular">Fular</option>
                   </select>
+                  <input
+                    type="text"
+                    placeholder="Boyut (opsiyonel, örn: 68x68cm)"
+                    value={newProduct.size}
+                    onChange={(e) => setNewProduct({ ...newProduct, size: e.target.value })}
+                    style={{ padding: '10px', borderRadius: '5px', border: '1px solid #ddd' }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Varyant Grup ID (opsiyonel, örn: 1)"
+                    value={newProduct.variant_group_id}
+                    onChange={(e) => setNewProduct({ ...newProduct, variant_group_id: e.target.value })}
+                    style={{ padding: '10px', borderRadius: '5px', border: '1px solid #ddd' }}
+                  />
+                </div>
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#6c757d' }}>
+                  <strong>Boyut/Varyant kullanımı:</strong> Aynı desenin farklı boyutlarını birbirine bağlamak için her ürüne aynı "Varyant Grup ID" değerini girin. Örn: 68x68cm fular ve 55x55cm fular için ikisine de Grup ID: 1 yazın.
                 </div>
                 
                 {/* Resim URL Girişi */}
@@ -909,6 +928,8 @@ function AdminPanel() {
                     <tr style={{ borderBottom: '2px solid #ddd' }}>
                       <th style={{ padding: '10px', textAlign: 'left' }}>Resim</th>
                       <th style={{ padding: '10px', textAlign: 'left' }}>ID</th>
+                      <th style={{ padding: '10px', textAlign: 'left' }}>Grup ID</th>
+                      <th style={{ padding: '10px', textAlign: 'left' }}>Boyut</th>
                       <th style={{ padding: '10px', textAlign: 'left' }}>Ürün Adı</th>
                       <th style={{ padding: '10px', textAlign: 'left' }}>Kategori</th>
                       <th style={{ padding: '10px', textAlign: 'left' }}>Fiyat</th>
@@ -950,6 +971,8 @@ function AdminPanel() {
                           )}
                         </td>
                         <td style={{ padding: '10px' }}>{product.id}</td>
+                        <td style={{ padding: '10px' }}>{product.variant_group_id}</td>
+                        <td style={{ padding: '10px' }}>{product.size}</td>
                         <td style={{ padding: '10px' }}>{product.name}</td>
                         <td style={{ padding: '10px' }}>{product.category || '-'}</td>
                         <td style={{ padding: '10px' }}>{product.price} TL</td>

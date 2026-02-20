@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useCart } from '../contexts/CartContext';
 import './ProductList.css';
 
@@ -135,7 +136,29 @@ function ProductList() {
     );
   }
 
+  const breadcrumbSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Ana Sayfa', item: 'https://ipekaksesuar.com' },
+      { '@type': 'ListItem', position: 2, name: 'Ürünler', item: 'https://ipekaksesuar.com/urunler' }
+    ]
+  };
+
   return (
+    <>
+    <Helmet>
+      <title>Tüm Ürünler | İpek Aksesuar</title>
+      <meta name="description" content="İpek Aksesuar'ın tüm ürünlerini keşfedin. El işçiliği ile üretilmiş premium kalite ipek eşarplar, şallar ve aksesuarlar." />
+      <link rel="canonical" href="https://ipekaksesuar.com/urunler" />
+      <meta property="og:type" content="website" />
+      <meta property="og:title" content="Tüm Ürünler | İpek Aksesuar" />
+      <meta property="og:description" content="İpek Aksesuar'ın tüm ürünlerini keşfedin. El işçiliği ile üretilmiş premium kalite ipek eşarplar, şallar ve aksesuarlar." />
+      <meta property="og:url" content="https://ipekaksesuar.com/urunler" />
+      <meta property="og:site_name" content="İpek Aksesuar" />
+      <meta property="og:locale" content="tr_TR" />
+      <script type="application/ld+json">{JSON.stringify(breadcrumbSchema)}</script>
+    </Helmet>
     <div className="product-list-container">
       <h1 className="product-list-title">Tüm Ürünler</h1>
 
@@ -265,6 +288,7 @@ function ProductList() {
                   <img
                     src={productImages[0]}
                     alt={product.name}
+                    loading="lazy"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.parentElement.innerHTML = '<div class="product-placeholder"><div class="product-placeholder-icon">🧣</div><span class="product-placeholder-text">Ürün Görseli</span></div>';
@@ -312,15 +336,6 @@ function ProductList() {
                 {/* Butonlar */}
                 <div className="product-actions">
                   <button
-                    className="view-product-button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleProductClick(product.id);
-                    }}
-                  >
-                    Ürünü İncele
-                  </button>
-                  <button
                     className="add-to-cart-button"
                     onClick={(e) => handleAddToCart(product, e)}
                     disabled={product.stock <= 0}
@@ -347,6 +362,7 @@ function ProductList() {
         </div>
       )}
     </div>
+    </>
   );
 }
 

@@ -1,6 +1,7 @@
 // Checkout.js - React component for checkout page
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { getShippingSettings } from '../config/siteSettings';
@@ -336,7 +337,8 @@ const Checkout = () => {
         paymentMethod: 'mock',
         orderNotes: checkoutData.order_notes || formData.order_notes || null,
         discountCode: appliedCoupon ? appliedCoupon.code : null,
-        discountAmount: appliedCoupon ? getCouponDiscount() : 0
+        discountAmount: appliedCoupon ? getCouponDiscount() : 0,
+        shippingFee: getShippingFee() // Kargo ücretini frontend'den gönder
       };
 
       // Send order to backend
@@ -401,6 +403,11 @@ const Checkout = () => {
   }
 
   return (
+    <>
+    <Helmet>
+      <title>Ödeme | İpek Aksesuar</title>
+      <meta name="robots" content="noindex, nofollow" />
+    </Helmet>
     <div className="checkout-container">
       <div className="checkout-header">
         <h1>Ödeme</h1>
@@ -816,6 +823,7 @@ const Checkout = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -26,6 +27,7 @@ import ResetPassword from './pages/ResetPassword';
 
 function App() {
   return (
+    <HelmetProvider>
     <AuthProvider>
       <CartProvider>
         <Router>
@@ -72,6 +74,7 @@ function App() {
         </Router>
       </CartProvider>
     </AuthProvider>
+    </HelmetProvider>
   );
 }
 

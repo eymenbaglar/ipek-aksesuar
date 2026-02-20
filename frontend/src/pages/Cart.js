@@ -1,6 +1,7 @@
 // Cart.js - Complete version with all features
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getShippingSettings } from '../config/siteSettings';
@@ -156,6 +157,11 @@ function Cart() {
   }
 
   return (
+    <>
+    <Helmet>
+      <title>Sepetim | İpek Aksesuar</title>
+      <meta name="robots" content="noindex, nofollow" />
+    </Helmet>
     <div className="cart-container">
       <h1>Sepetim ({cartItems.length} Ürün)</h1>
       
@@ -415,6 +421,7 @@ function Cart() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

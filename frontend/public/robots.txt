@@ -1,3 +1,20 @@
-# https://www.robotstxt.org/robotstxt.html
 User-agent: *
-Disallow:
+Disallow: /admin
+Disallow: /profil
+Disallow: /sepet
+Disallow: /checkout
+Disallow: /siparis-basarili
+Disallow: /email-dogrulama-bekleniyor
+Disallow: /email-dogrulama
+Disallow: /sifre-sifirlama
+
+Allow: /
+Allow: /urunler
+Allow: /urun/
+Allow: /giris
+Allow: /kayit
+Allow: /kullanim-kosullari
+Allow: /mesafeli-satis-sozlesmesi
+Allow: /kvkk
+
+Sitemap: https://ipekaksesuar.com/sitemap.xml

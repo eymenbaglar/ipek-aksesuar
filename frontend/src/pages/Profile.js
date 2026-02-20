@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useCart } from '../contexts/CartContext';
 import OrderDetailsModal from '../components/OrderDetailsModal';
 
@@ -339,6 +340,11 @@ function Profile() {
   });
 
   return (
+    <>
+    <Helmet>
+      <title>Profilim | İpek Aksesuar</title>
+      <meta name="robots" content="noindex, nofollow" />
+    </Helmet>
     <div style={{ backgroundColor: '#f8f9fa', minHeight: '100vh', padding: '40px 20px' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         {/* Başlık */}
@@ -1551,6 +1557,7 @@ function Profile() {
         />
       )}
     </div>
+    </>
   );
 }
 

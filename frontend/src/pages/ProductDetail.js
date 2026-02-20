@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useCart } from '../contexts/CartContext';
 
 function ProductDetail() {
@@ -43,6 +44,7 @@ const toggleFavorite = () => {
 
   useEffect(() => {
     fetchProduct();
+    setSelectedImageIndex(0); // Farklı varyanta geçince resmi başa al
   }, [id]);
 
   const fetchProduct = async () => {
@@ -162,10 +164,61 @@ const toggleFavorite = () => {
 
   const productImages = getProductImages();
   const hasImages = productImages.length > 0;
+  const productImage = productImages[0] || '';
+  const productUrl = `https://ipekaksesuar.com/urun/${product.id}`;
+  const productPrice = parseFloat(product.price).toFixed(2);
+
+  const schemaOrgProduct = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.name,
+    description: product.description || 'Premium kalite ipek ürün.',
+    image: productImages,
+    url: productUrl,
+    brand: { '@type': 'Brand', name: 'İpek Aksesuar' },
+    offers: {
+      '@type': 'Offer',
+      priceCurrency: 'TRY',
+      price: productPrice,
+      availability: product.stock > 0
+        ? 'https://schema.org/InStock'
+        : 'https://schema.org/OutOfStock',
+      url: productUrl,
+      seller: { '@type': 'Organization', name: 'İpek Aksesuar' }
+    }
+  };
 
   return (
-    <div style={{ 
-      display: 'flex', 
+    <>
+    <Helmet>
+      <title>{product.name} | İpek Aksesuar</title>
+      <meta name="description" content={`${product.name} - ${product.description ? product.description.slice(0, 155) : 'Premium kalite ipek ürün. El işçiliği ile üretilmiş, özel hediye kutusu ile gönderilir.'}`} />
+      <link rel="canonical" href={productUrl} />
+
+      {/* Open Graph */}
+      <meta property="og:type" content="product" />
+      <meta property="og:title" content={`${product.name} | İpek Aksesuar`} />
+      <meta property="og:description" content={product.description ? product.description.slice(0, 200) : 'Premium kalite ipek ürün.'} />
+      <meta property="og:url" content={productUrl} />
+      {productImage && <meta property="og:image" content={productImage} />}
+      <meta property="og:site_name" content="İpek Aksesuar" />
+      <meta property="og:locale" content="tr_TR" />
+      <meta property="product:price:amount" content={productPrice} />
+      <meta property="product:price:currency" content="TRY" />
+
+      {/* Twitter Card */}
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content={`${product.name} | İpek Aksesuar`} />
+      <meta name="twitter:description" content={product.description ? product.description.slice(0, 200) : 'Premium kalite ipek ürün.'} />
+      {productImage && <meta name="twitter:image" content={productImage} />}
+
+      {/* Schema.org JSON-LD */}
+      <script type="application/ld+json">
+        {JSON.stringify(schemaOrgProduct)}
+      </script>
+    </Helmet>
+    <div style={{
+      display: 'flex',
       minHeight: 'calc(100vh - 60px)',
       backgroundColor: '#fff'
     }}>
@@ -359,8 +412,49 @@ const toggleFavorite = () => {
           {product.description || 'Premium kalite ipek ürün. El işçiliği ile üretilmiş, özel hediye kutusu ile gönderilir.'}
         </p>
 
+        {/* Boyut Seçici - size girilmiş her üründe göster */}
+        {product.size && (
+          <div style={{ marginBottom: '30px' }}>
+            <p style={{ fontSize: '14px', color: '#6c757d', marginBottom: '10px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              Boyut Seçin
+            </p>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              {(product.variants && product.variants.length > 1 ? product.variants : [product]).map((variant) => {
+                const isSelected = variant.id === product.id;
+                const isOutOfStock = variant.stock === 0;
+                return (
+                  <button
+                    key={variant.id}
+                    onClick={() => !isSelected && navigate(`/urun/${variant.id}`)}
+                    disabled={isOutOfStock}
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: '6px',
+                      border: isSelected ? '2px solid #667eea' : '2px solid #dee2e6',
+                      backgroundColor: isSelected ? '#667eea' : isOutOfStock ? '#f8f9fa' : 'white',
+                      color: isSelected ? 'white' : isOutOfStock ? '#adb5bd' : '#495057',
+                      fontSize: '14px',
+                      fontWeight: isSelected ? '600' : '400',
+                      cursor: isSelected || isOutOfStock ? 'default' : 'pointer',
+                      transition: 'all 0.2s ease',
+                      textDecoration: isOutOfStock ? 'line-through' : 'none',
+                      position: 'relative'
+                    }}
+                    title={isOutOfStock ? 'Stokta yok' : variant.size}
+                  >
+                    {variant.size}
+                    {isOutOfStock && (
+                      <span style={{ fontSize: '10px', display: 'block', color: '#adb5bd' }}>Stokta Yok</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Ürün Özellikleri */}
-        <div style={{ 
+        <div style={{
           marginBottom: '40px',
           padding: '20px',
           backgroundColor: '#f8f9fa',
@@ -504,6 +598,7 @@ const toggleFavorite = () => {
         </button>
       </div>
     </div>
+    </>
   );
 }
 

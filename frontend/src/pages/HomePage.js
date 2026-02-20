@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useCart } from '../contexts/CartContext';
 import './HomePage.css';
 
@@ -103,7 +104,33 @@ function HomePage() {
     return Array.isArray(product.images) ? product.images : [];
   };
 
+  const organizationSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'İpek Aksesuar',
+    url: 'https://ipekaksesuar.com',
+    description: 'El işçiliği ile üretilmiş premium kalite ipek eşarplar, şallar ve aksesuarlar.',
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'customer service',
+      availableLanguage: 'Turkish'
+    }
+  };
+
   return (
+    <>
+    <Helmet>
+      <title>İpek Aksesuar | Premium İpek Eşarp ve Şal</title>
+      <meta name="description" content="El işçiliği ile üretilmiş premium kalite ipek eşarplar, şallar ve aksesuarlar. Özel hediye kutusu ile gönderim." />
+      <link rel="canonical" href="https://ipekaksesuar.com" />
+      <meta property="og:type" content="website" />
+      <meta property="og:title" content="İpek Aksesuar | Premium İpek Eşarp ve Şal" />
+      <meta property="og:description" content="El işçiliği ile üretilmiş premium kalite ipek eşarplar, şallar ve aksesuarlar. Özel hediye kutusu ile gönderim." />
+      <meta property="og:url" content="https://ipekaksesuar.com" />
+      <meta property="og:site_name" content="İpek Aksesuar" />
+      <meta property="og:locale" content="tr_TR" />
+      <script type="application/ld+json">{JSON.stringify(organizationSchema)}</script>
+    </Helmet>
     <div className="homepage-container">
       {/* Hero Banner Slider */}
       <section className="hero-slider">
@@ -281,6 +308,7 @@ function HomePage() {
         </div>
       </section>
     </div>
+    </>
   );
 }
 

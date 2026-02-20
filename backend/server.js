@@ -763,12 +763,24 @@ app.get('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Ürün bulunamadı' });
     }
 
-    res.json(result.rows[0]);
+    const product = result.rows[0];
+
+    // Aynı variant grubundaki diğer ürünleri getir
+    let variants = [];
+    if (product.variant_group_id) {
+      const variantResult = await pool.query(
+        'SELECT id, name, size, price, stock FROM products WHERE variant_group_id = $1 ORDER BY id ASC',
+        [product.variant_group_id]
+      );
+      variants = variantResult.rows;
+    }
+
+    res.json({ ...product, variants });
   } catch (error) {
     console.error('Get product error:', error);
     res.status(500).json({ error: 'Ürün bilgileri alınamadı' });
@@ -1021,11 +1033,11 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 
 app.post('/api/admin/products', authenticateToken, requireAdmin, adminLimiter, productValidation, handleValidationErrors, verifyCsrfToken, async (req, res) => {
   try {
-    const { name, description, price, stock, images, category } = req.body;
+    const { name, description, price, stock, images, category, size, variant_group_id } = req.body;
 
     const result = await pool.query(
-      'INSERT INTO products (name, description, price, stock, images, category, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
-      [name, description, price, stock, JSON.stringify(images), category]
+      'INSERT INTO products (name, description, price, stock, images, category, size, variant_group_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) RETURNING *',
+      [name, description, price, stock, JSON.stringify(images), category, size || null, variant_group_id || null]
     );
 
     res.status(201).json(result.rows[0]);
@@ -1038,11 +1050,11 @@ app.post('/api/admin/products', authenticateToken, requireAdmin, adminLimiter, p
 app.put('/api/admin/products/:id', authenticateToken, requireAdmin, adminLimiter, productValidation, handleValidationErrors, verifyCsrfToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, price, stock, images, category } = req.body;
+    const { name, description, price, stock, images, category, size, variant_group_id } = req.body;
 
     const result = await pool.query(
-      'UPDATE products SET name = $1, description = $2, price = $3, stock = $4, images = $5, category = $6 WHERE id = $7 RETURNING *',
-      [name, description, price, stock, JSON.stringify(images), category, id]
+      'UPDATE products SET name = $1, description = $2, price = $3, stock = $4, images = $5, category = $6, size = $7, variant_group_id = $8 WHERE id = $9 RETURNING *',
+      [name, description, price, stock, JSON.stringify(images), category, size || null, variant_group_id || null, id]
     );
 
     if (result.rows.length === 0) {
@@ -1971,6 +1983,44 @@ app.put('/api/admin/refund-requests/:requestId', authenticateToken, requireAdmin
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK' });
+});
+
+// Dinamik Sitemap
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const BASE_URL = process.env.FRONTEND_URL || 'https://ipekaksesuar.com';
+    const result = await pool.query('SELECT id, updated_at FROM products WHERE stock > 0 ORDER BY id ASC');
+
+    const staticUrls = [
+      { loc: `${BASE_URL}/`, changefreq: 'weekly', priority: '1.0' },
+      { loc: `${BASE_URL}/urunler`, changefreq: 'daily', priority: '0.9' },
+    ];
+
+    const productUrls = result.rows.map(p => ({
+      loc: `${BASE_URL}/urun/${p.id}`,
+      lastmod: p.updated_at ? new Date(p.updated_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      changefreq: 'weekly',
+      priority: '0.8'
+    }));
+
+    const allUrls = [...staticUrls, ...productUrls];
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${allUrls.map(u => `  <url>
+    <loc>${u.loc}</loc>
+    ${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ''}
+    <changefreq>${u.changefreq}</changefreq>
+    <priority>${u.priority}</priority>
+  </url>`).join('\n')}
+</urlset>`;
+
+    res.header('Content-Type', 'application/xml');
+    res.send(xml);
+  } catch (error) {
+    console.error('Sitemap error:', error);
+    res.status(500).send('Sitemap oluşturulamadı');
+  }
 });
 
 app.listen(PORT, () => {

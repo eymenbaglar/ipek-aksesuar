@@ -53,9 +53,7 @@ function Navbar() {
               onBlur={() => setTimeout(() => setIsSearchOpen(false), 200)}
               className="search-input"
             />
-            <button type="submit" className="search-button">
-              🔍
-            </button>
+            
 
             {/* Search Suggestions */}
             {isSearchOpen && searchQuery.length > 0 && (
@@ -83,6 +81,9 @@ function Navbar() {
                 </div>
               </div>
             )}
+            <button type="submit" className="search-button">
+              🔍
+            </button>
           </form>
         </div>
 
